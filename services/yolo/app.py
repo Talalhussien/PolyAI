@@ -15,6 +15,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 import torch
 torch.cuda.is_available = lambda: False
 
+#FastAPI
 app = FastAPI()
 
 # Expose /metrics endpoint with default process metrics + FastAPI HTTP metrics
