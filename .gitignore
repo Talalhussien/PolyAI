@@ -26,6 +26,8 @@ __pycache__
 *.pytest_cache/
 *.coverage
 .coverage.*
+coverage.xml
+htmlcov/
 .cache
 .tox/
 dist/

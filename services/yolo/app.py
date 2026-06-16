@@ -11,10 +11,11 @@ import shutil
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-# Disable GPU usage
+# Disable GPU usage 
 import torch
 torch.cuda.is_available = lambda: False
 
+#FastAPI
 app = FastAPI()
 
 # Expose /metrics endpoint with default process metrics + FastAPI HTTP metrics
@@ -27,7 +28,7 @@ _raw_threshold = os.environ.get("CONFIDENCE_THRESHOLD")
 if _raw_threshold is not None:
     CONFIDENCE_THRESHOLD = float(_raw_threshold)
     logging.info(f"CONFIDENCE_THRESHOLD set to {CONFIDENCE_THRESHOLD} (from environment)")
-else:
+else:  # pragma: no cover - import-time default; tests set CONFIDENCE_THRESHOLD before import
     CONFIDENCE_THRESHOLD = 0.5
     logging.info(f"CONFIDENCE_THRESHOLD not set, using default: {CONFIDENCE_THRESHOLD}")
 
@@ -97,6 +98,10 @@ def predict(file: UploadFile = File(...)):
     """
     Predict objects in an image
     """
+    # Reject anything that is not an image before doing any work.
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Uploaded file must be an image")
+
     ext = os.path.splitext(file.filename)[1]
     uid = str(uuid.uuid4())
     original_path = os.path.join(UPLOAD_DIR, uid + ext)
@@ -174,6 +179,90 @@ def get_prediction_image(uid: str):
     if not row or not os.path.exists(row[0]):
         raise HTTPException(status_code=404, detail="Image not found")
     return FileResponse(row[0])
+
+
+@app.get("/predictions/label/{label}")
+def get_predictions_by_label(label: str):
+    """
+    Return all prediction sessions that contain at least one detected
+    object with the given label (e.g. "person", "car").
+    """
+    if not label.strip():
+        raise HTTPException(status_code=400, detail="Label cannot be empty")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+
+        # Every session that has at least one object with this label.
+        sessions = conn.execute(
+            """
+            SELECT DISTINCT ps.uid, ps.timestamp
+            FROM prediction_sessions ps
+            JOIN detection_objects det ON det.prediction_uid = ps.uid
+            WHERE det.label = ?
+            ORDER BY ps.timestamp
+            """,
+            (label,),
+        ).fetchall()
+
+        results = []
+        for session in sessions:
+            objects = conn.execute(
+                """
+                SELECT id, label, score, box
+                FROM detection_objects
+                WHERE prediction_uid = ? AND label = ?
+                """,
+                (session["uid"], label),
+            ).fetchall()
+            results.append({
+                "uid": session["uid"],
+                "timestamp": session["timestamp"],
+                "detection_objects": [
+                    {
+                        "id": obj["id"],
+                        "label": obj["label"],
+                        "score": obj["score"],
+                        "box": obj["box"],
+                    }
+                    for obj in objects
+                ],
+            })
+
+        return results
+
+
+@app.get("/predictions/score/{min_score}")
+def get_predictions_by_score(min_score: float):
+    """
+    Return all detection objects whose confidence score is greater than or
+    equal to min_score (a float between 0.0 and 1.0).
+    """
+    if min_score < 0.0 or min_score > 1.0:
+        raise HTTPException(status_code=400, detail="min_score must be between 0.0 and 1.0")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        objects = conn.execute(
+            """
+            SELECT id, prediction_uid, label, score, box
+            FROM detection_objects
+            WHERE score >= ?
+            ORDER BY score DESC
+            """,
+            (min_score,),
+        ).fetchall()
+
+        return [
+            {
+                "id": obj["id"],
+                "prediction_uid": obj["prediction_uid"],
+                "label": obj["label"],
+                "score": obj["score"],
+                "box": obj["box"],
+            }
+            for obj in objects
+        ]
 
 
 @app.get("/health")

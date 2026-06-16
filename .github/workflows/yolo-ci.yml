@@ -1,0 +1,52 @@
+name: YOLO Service CI
+
+# Run on pushes to main and on every PR that touches the YOLO service
+# (or this workflow file itself).
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'services/yolo/**'
+      - '.github/workflows/yolo-ci.yml'
+  pull_request:
+    paths:
+      - 'services/yolo/**'
+      - '.github/workflows/yolo-ci.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/yolo
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: |
+            services/yolo/requirements.txt
+            services/yolo/torch-requirements.txt
+
+      - name: Install system dependencies (OpenCV runtime libs)
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev libglib2.0-0
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r torch-requirements.txt
+          pip install -r requirements.txt
+
+      - name: Run tests with coverage
+        run: pytest tests/
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: services/yolo/coverage.xml
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}

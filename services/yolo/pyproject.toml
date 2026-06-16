@@ -1,0 +1,14 @@
+# Test + coverage configuration for the YOLO service.
+# With these defaults, `pytest tests/` automatically measures coverage of
+# app.py and writes coverage.xml (the file Codecov uploads in CI).
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=app --cov-report=term-missing --cov-report=xml"
+
+[tool.coverage.report]
+# Lines that can never run under the test client are excluded from the total.
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+]
