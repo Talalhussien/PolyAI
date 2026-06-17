@@ -1,0 +1,72 @@
+name: Deploy YOLO Service
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+
+jobs:
+  deploy-dev:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Dev EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEV_INSTANCE_IP }}
+          username: ubuntu
+          key: ${{ secrets.DEV_INSTANCE_SSH_KEY }}
+          script: |
+            set -e
+
+            echo "Deploying YOLO service to DEV..."
+
+            cd /opt/PolyAI
+
+            git fetch origin
+            git checkout dev
+            git pull origin dev
+
+            cd services/yolo
+
+            source .venv/bin/activate
+
+            pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+            pip install --no-cache-dir -r requirements.txt
+
+            sudo systemctl restart yolo.service
+            sudo systemctl status yolo.service --no-pager
+
+  deploy-prod:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Prod EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_INSTANCE_IP }}
+          username: ubuntu
+          key: ${{ secrets.PROD_INSTANCE_SSH_KEY }}
+          script: |
+            set -e
+
+            echo "Deploying YOLO service to PROD..."
+
+            cd /opt/PolyAI
+
+            git fetch origin
+            git checkout main
+            git pull origin main
+
+            cd services/yolo
+
+            source .venv/bin/activate
+
+            pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+            pip install --no-cache-dir -r requirements.txt
+
+            sudo systemctl restart yolo.service
+            sudo systemctl status yolo.service --no-pager
