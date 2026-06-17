@@ -1,66 +1,62 @@
 name: Deploy YOLO Service
 
 on:
-push:
-branches:
-- dev
-- main
+  push:
+    branches:
+      - dev
+      - main
 
 jobs:
-deploy-dev:
-if: github.ref == 'refs/heads/dev'
-runs-on: ubuntu-latest
+  deploy-dev:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
 
-```
-steps:
-  - name: Deploy to Dev EC2
-    uses: appleboy/ssh-action@v1
-    with:
-      host: ${{ secrets.DEV_INSTANCE_IP }}
-      username: ubuntu
-      key: ${{ secrets.DEV_INSTANCE_SSH_KEY }}
-      script: |
-        set -e
+    steps:
+      - name: Deploy to Dev EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEV_INSTANCE_IP }}
+          username: ubuntu
+          key: ${{ secrets.DEV_INSTANCE_SSH_KEY }}
+          script: |
+            set -e
 
-        echo "Deploying YOLO service to DEV..."
+            echo "Deploying YOLO service to DEV..."
 
-        cd /opt/PolyAI
+            cd /opt/PolyAI
 
-        git fetch origin
-        git checkout dev
-        git reset --hard origin/dev
+            git fetch origin
+            git checkout dev
+            git reset --hard origin/dev
 
-        sudo systemctl restart yolo.service
-        sudo systemctl status yolo.service --no-pager
+            sudo systemctl restart yolo.service
+            sudo systemctl status yolo.service --no-pager
 
-        echo "DEV deployment completed successfully."
-```
+            echo "DEV deployment completed successfully."
 
-deploy-prod:
-if: github.ref == 'refs/heads/main'
-runs-on: ubuntu-latest
+  deploy-prod:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
 
-```
-steps:
-  - name: Deploy to Prod EC2
-    uses: appleboy/ssh-action@v1
-    with:
-      host: ${{ secrets.PROD_INSTANCE_IP }}
-      username: ubuntu
-      key: ${{ secrets.PROD_INSTANCE_SSH_KEY }}
-      script: |
-        set -e
+    steps:
+      - name: Deploy to Prod EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_INSTANCE_IP }}
+          username: ubuntu
+          key: ${{ secrets.PROD_INSTANCE_SSH_KEY }}
+          script: |
+            set -e
 
-        echo "Deploying YOLO service to PROD..."
+            echo "Deploying YOLO service to PROD..."
 
-        cd /opt/PolyAI
+            cd /opt/PolyAI
 
-        git fetch origin
-        git checkout main
-        git reset --hard origin/main
+            git fetch origin
+            git checkout main
+            git reset --hard origin/main
 
-        sudo systemctl restart yolo.service
-        sudo systemctl status yolo.service --no-pager
+            sudo systemctl restart yolo.service
+            sudo systemctl status yolo.service --no-pager
 
-        echo "PROD deployment completed successfully."
-```
+            echo "PROD deployment completed successfully."
