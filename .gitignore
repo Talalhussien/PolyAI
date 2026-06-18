@@ -48,3 +48,4 @@ services/frontend/.next/
 services/frontend/node_modules/
 services/frontend/out/
 
+*.pem
