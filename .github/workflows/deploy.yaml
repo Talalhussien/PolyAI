@@ -15,7 +15,7 @@ jobs:
       - name: Deploy to Dev EC2
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.DEV_INSTANCE_IP }}
+          host: dev.talal.fursa.click
           username: ubuntu
           key: ${{ secrets.DEV_INSTANCE_SSH_KEY }}
           script: |
@@ -42,7 +42,7 @@ jobs:
       - name: Deploy to Prod EC2
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.PROD_INSTANCE_IP }}
+          host: prod.talal.fursa.click
           username: ubuntu
           key: ${{ secrets.PROD_INSTANCE_SSH_KEY }}
           script: |
