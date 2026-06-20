@@ -48,3 +48,11 @@ services/frontend/.next/
 services/frontend/node_modules/
 services/frontend/out/
 
+# private
+*.pem
+cert.pem
+key.pem
+
+# command notes
+cert_command
+command.txt
