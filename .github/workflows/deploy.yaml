@@ -47,8 +47,8 @@ jobs:
             set -e
             cd /opt/PolyAI
             git fetch origin
-            git checkout dev
-            git reset --hard origin/dev
+            git checkout main
+            git reset --hard origin/main
             sudo systemctl restart yolo.service
             sudo systemctl restart agent.service
             sudo systemctl restart frontend.service
