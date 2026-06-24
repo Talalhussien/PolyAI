@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from contextvars import ContextVar
+import time
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -31,6 +32,7 @@ MODEL = os.environ.get("MODEL")
 ALLOWED_MODELS = {
     "openai:gpt-5.4-mini",
     "anthropic:claude-haiku-4-5",
+    "google_genai:gemini-2.5-flash"
 }
 
 if MODEL not in ALLOWED_MODELS:
@@ -72,35 +74,86 @@ TOOLS = {
 llm = init_chat_model(MODEL, temperature=0)
 llm_with_tools = llm.bind_tools(list(TOOLS.values()))
 
-def run_agent(history: list) -> str:
-    """
-    Simple ReAct loop:
-      1. Send messages to the LLM.
-      2. If the LLM requests tool calls, execute them and append results.
-      3. Repeat until the LLM returns a plain text response.
-    """
-    messages = [SystemMessage(content=SYSTEM_PROMPT)] + history
 
+class ChatResponse(BaseModel):
+    response: str
+    prediction_id: Optional[str] = None
+    annotated_image: Optional[str] = None
+    agent_loop_time_s: float
+    iterations: int
+    tools_called: list[str]
+    context_limit_exceeded: bool
+
+
+
+def run_agent(history: list, max_iterations: int = 10) -> dict:
+    messages = [SystemMessage(content=SYSTEM_PROMPT)] + history
+    iterations = 0
+    tools_called = []
+    prediction_id = None
+    annotated_image = None
+    context_limit_exceeded = False
+    start = time.time()
     while True:
+        if iterations >= max_iterations:
+            context_limit_exceeded = True
+            messages.append(HumanMessage(
+                content="You've reached the maximum number of steps. Based on everything gathered so far, give your best answer now."
+            ))
+            response = llm_with_tools.invoke(messages)
+            content = response.content
+            if isinstance(content, list):
+                content = "".join(block["text"] for block in content if block.get("type") == "text")
+            break
+
         response: AIMessage = llm_with_tools.invoke(messages)
         messages.append(response)
+        iterations += 1
 
-        # No tool calls, the model produced its final answer
         if not response.tool_calls:
-            return response.content
+            content = response.content
+            if isinstance(content, list):
+                content = "".join(block["text"] for block in content if block.get("type") == "text")
+            break
 
-        # Execute every tool the model requested
         for tool_call in response.tool_calls:
+            tools_called.append(tool_call["name"])
             tool_fn = TOOLS[tool_call["name"]]
-            tool_result = tool_fn.invoke(tool_call)          # returns a ToolMessage
+            tool_result = tool_fn.invoke(tool_call)
             messages.append(tool_result)
+
+            try:
+                result_data = json.loads(tool_result.content)
+                if "prediction_uid" in result_data:
+                    prediction_id = result_data["prediction_uid"]
+                    with httpx.Client(timeout=30.0) as client:
+                        img_resp = client.get(f"{YOLO_SERVICE_URL}/prediction/{prediction_id}/image")
+                        if img_resp.status_code == 200:
+                            annotated_image = base64.b64encode(img_resp.content).decode("utf-8")
+            except Exception:
+                pass
+
+    return {
+        "response": content,
+        "prediction_id": prediction_id,
+        "annotated_image": annotated_image,
+        "agent_loop_time_s": round(time.time() - start, 3),
+        "iterations": iterations,
+        "tools_called": tools_called,
+        "context_limit_exceeded": context_limit_exceeded,
+    }
 
 
 app = FastAPI(title="Vision Agent")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://dev.talal.fursa.click:3000",
+        "http://prod.talal.fursa.click:3000",
+    ],
     allow_methods=["POST", "GET"],
     allow_headers=["Content-Type"],
 )
@@ -116,10 +169,6 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage]         # full conversation thread, oldest first
 
 
-class ChatResponse(BaseModel):
-    response: str
-
-
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
     lc_messages = []
@@ -128,7 +177,7 @@ def chat(request: ChatRequest):
     for msg in request.messages:
         if msg.role == "user":
             if msg.image_base64:
-                latest_image = msg.image_base64          # saved for detect_objects tool
+                latest_image = msg.image_base64
                 content = msg.content + "\n[An image was uploaded. Use existing tools to analyze it according to user instructions.]"
             else:
                 content = msg.content
@@ -138,7 +187,7 @@ def chat(request: ChatRequest):
 
     token = _current_image_b64.set(latest_image)
     try:
-        return ChatResponse(response=run_agent(lc_messages))
+        return ChatResponse(**run_agent(lc_messages))
     finally:
         _current_image_b64.reset(token)
 
