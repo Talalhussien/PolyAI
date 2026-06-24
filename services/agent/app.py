@@ -114,7 +114,15 @@ def run_agent(history: list, max_iterations: int = 10) -> dict:
             content = response.content
             if isinstance(content, list):
                 content = "".join(block["text"] for block in content if block.get("type") == "text")
-            return content
+            return {
+                "response": content,
+                "prediction_id": prediction_id,
+                "annotated_image": annotated_image,
+                "agent_loop_time_s": round(time.time() - start, 3),
+                "iterations": iterations,
+                "tools_called": tools_called,
+                "context_limit_exceeded": context_limit_exceeded,
+            }
 
         for tool_call in response.tool_calls:
             tools_called.append(tool_call["name"])
