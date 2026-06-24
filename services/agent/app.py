@@ -114,7 +114,7 @@ def run_agent(history: list, max_iterations: int = 10) -> dict:
             content = response.content
             if isinstance(content, list):
                 content = "".join(block["text"] for block in content if block.get("type") == "text")
-            break
+            return content
 
         for tool_call in response.tool_calls:
             tools_called.append(tool_call["name"])
