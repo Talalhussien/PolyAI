@@ -2,12 +2,6 @@ name: YOLO Service CI
 
 on:
   pull_request:
-    paths:
-      - 'services/yolo/**'
-      - 'services/agent/**'
-      - 'services/frontend/**'
-      - '.github/workflows/**
-   
 
 jobs:
   test:
