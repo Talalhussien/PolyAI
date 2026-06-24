@@ -3,11 +3,22 @@ from fastapi.responses import FileResponse, Response
 from prometheus_fastapi_instrumentator import Instrumentator
 from ultralytics import YOLO
 from PIL import Image
+from pydantic import BaseModel
 import sqlite3
 import logging
 import os
 import uuid
 import shutil
+import time
+import torch
+
+
+class PredictResponse(BaseModel):
+    prediction_uid: str
+    detection_count: int
+    labels: list[str]
+    time_took: float
+
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -97,12 +108,10 @@ def save_detection_object(prediction_uid, label, score, box):
             VALUES (?, ?, ?, ?)
         """, (prediction_uid, label, score, str(box)))
 
-@app.post("/predict")
+
+
+@app.post("/predict", response_model=PredictResponse)
 def predict(file: UploadFile = File(...)):
-    """
-    Predict objects in an image
-    """
-    # Reject anything that is not an image before doing any work.
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Uploaded file must be an image")
 
@@ -114,14 +123,16 @@ def predict(file: UploadFile = File(...)):
     with open(original_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
+    start = time.time()
     results = model(original_path, device="cpu", conf=CONFIDENCE_THRESHOLD)
 
-    annotated_frame = results[0].plot()  # NumPy image with boxes
+    annotated_frame = results[0].plot()
     annotated_image = Image.fromarray(annotated_frame)
     annotated_image.save(predicted_path)
+    time_took = round(time.time() - start, 3)
 
     save_prediction_session(uid, original_path, predicted_path)
-    
+
     detected_labels = []
     for box in results[0].boxes:
         label_idx = int(box.cls[0].item())
@@ -131,45 +142,12 @@ def predict(file: UploadFile = File(...)):
         save_detection_object(uid, label, score, bbox)
         detected_labels.append(label)
 
-    return {
-        "prediction_uid": uid, 
-        "detection_count": len(results[0].boxes),
-        "labels": detected_labels
-    }
-
-@app.get("/prediction/{uid}")
-def get_prediction_by_uid(uid: str):
-    """
-    Get prediction session by uid with all detected objects
-    """
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        # Get prediction session
-        session = conn.execute("SELECT * FROM prediction_sessions WHERE uid = ?", (uid,)).fetchone()
-        if not session:
-            raise HTTPException(status_code=404, detail="Prediction not found")
-            
-        # Get all detection objects for this prediction
-        objects = conn.execute(
-            "SELECT * FROM detection_objects WHERE prediction_uid = ?", 
-            (uid,)
-        ).fetchall()
-        
-        return {
-            "uid": session["uid"],
-            "timestamp": session["timestamp"],
-            "original_image": session["original_image"],
-            "predicted_image": session["predicted_image"],
-            "detection_objects": [
-                {
-                    "id": obj["id"],
-                    "label": obj["label"],
-                    "score": obj["score"],
-                    "box": obj["box"]
-                } for obj in objects
-            ]
-        }
-
+    return PredictResponse(
+        prediction_uid=uid,
+        detection_count=len(results[0].boxes),
+        labels=detected_labels,
+        time_took=time_took,
+    )
 
 @app.get("/prediction/{uid}/image")
 def get_prediction_image(uid: str):
