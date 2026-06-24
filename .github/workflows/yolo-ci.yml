@@ -4,7 +4,10 @@ on:
   pull_request:
     paths:
       - 'services/yolo/**'
-      - '.github/workflows/yolo-ci.yml'
+      - 'services/agent/**'
+      - 'services/frontend/**'
+      - '.github/workflows/**
+   
 
 jobs:
   test:
