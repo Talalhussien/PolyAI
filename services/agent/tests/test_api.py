@@ -68,7 +68,9 @@ def test_chat_tokens_used_in_response(client):
 
 
 def test_chat_with_image(client):
-    with patch("app.run_agent", return_value=FAKE_AGENT_RESPONSE):
+    with patch("app.run_agent", return_value=FAKE_AGENT_RESPONSE), \
+         patch("app.s3_client") as mock_s3:
+        mock_s3.put_object.return_value = {}
         response = client.post(
             "/chat",
             json={"messages": [
