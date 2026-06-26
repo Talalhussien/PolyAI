@@ -1,18 +1,17 @@
-name: Deploy YOLO Service
+name: Deploy Yolo
 
 on:
   push:
     branches:
-      - dev
       - main
+      - dev
 
 jobs:
   deploy-dev:
     if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
-
     steps:
-      - name: Deploy to Dev EC2
+      - name: Deploy to Dev instance
         uses: appleboy/ssh-action@v1
         with:
           host: dev.talal.fursa.click
@@ -35,9 +34,8 @@ jobs:
   deploy-prod:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-
     steps:
-      - name: Deploy to Prod EC2
+      - name: Deploy to Prod instance
         uses: appleboy/ssh-action@v1
         with:
           host: prod.talal.fursa.click
