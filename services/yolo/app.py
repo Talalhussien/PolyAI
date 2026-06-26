@@ -1,4 +1,5 @@
 import boto3
+from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -205,8 +206,11 @@ def get_prediction_image(uid: str):
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Image not found")
-    obj = s3_client.get_object(Bucket=AWS_S3_BUCKET, Key=row[0])
-    return Response(content=obj["Body"].read(), media_type="image/jpeg")
+    try:
+        obj = s3_client.get_object(Bucket=AWS_S3_BUCKET, Key=row[0])
+        return Response(content=obj["Body"].read(), media_type="image/jpeg")
+    except ClientError:
+        raise HTTPException(status_code=404, detail="Image not found")
 
 
 @app.get("/predictions/label/{label}")
