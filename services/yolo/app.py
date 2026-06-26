@@ -28,7 +28,7 @@ app = FastAPI()
 
 
 @app.on_event("shutdown")
-def shutdown_event():
+def shutdown_event():   # pragma: no cover  ← ignored by coverage
     logging.info("Received shutdown request -- YOLO service is shutting down gracefully...")
 
 
