@@ -8,7 +8,9 @@ langchain-core
 langchain[openai]
 langchain[anthropic]
 langchain[google-genai]
+langchain-aws
 
 httpx
 pydantic
+boto3
 pytest

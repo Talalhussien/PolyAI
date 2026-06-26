@@ -29,11 +29,12 @@ from pydantic import BaseModel
 YOLO_SERVICE_URL = os.environ.get("YOLO_SERVICE_URL", "http://localhost:8080")
 MODEL = os.environ.get("MODEL")
 
-# Text-only models
 ALLOWED_MODELS = {
     "openai:gpt-5.4-mini",
     "anthropic:claude-haiku-4-5",
-    "google_genai:gemini-2.5-flash"
+    "google_genai:gemini-2.5-flash",
+    "bedrock_converse/anthropic.claude-3-5-haiku-20241022-v1:0",
+    "bedrock_converse/amazon.nova-lite-v1:0",
 }
 
 if MODEL not in ALLOWED_MODELS:
@@ -72,7 +73,7 @@ TOOLS = {
     detect_objects.name: detect_objects
 }
 
-# Anthropic Tier 1 limit (50 RPM) is the most restrictive across all allowed models.
+# Bedrock on-demand default: ~50 RPM for Claude models (check AWS Service Quotas for your account).
 # 50 requests/min = 50/60 ≈ 0.833 requests/second
 rate_limiter = InMemoryRateLimiter(
     requests_per_second=50 / 60,
@@ -80,10 +81,19 @@ rate_limiter = InMemoryRateLimiter(
     max_bucket_size=5,
 )
 
-llm = init_chat_model(MODEL, temperature=0, rate_limiter=rate_limiter)
+# Bedrock models use "provider/model-id" format (e.g. bedrock_converse/anthropic.claude-...).
+# init_chat_model only recognises "provider:model" with a colon, but Bedrock model IDs
+# already contain colons, so we split on "/" ourselves and pass model_provider explicitly.
+if "/" in MODEL:
+    _provider, _model_id = MODEL.split("/", 1)
+    llm = init_chat_model(_model_id, model_provider=_provider, temperature=0, rate_limiter=rate_limiter)
+else:
+    llm = init_chat_model(MODEL, temperature=0, rate_limiter=rate_limiter)
 
 if llm.profile is not None:
-    if not llm.profile.get("tool_calling"):
+    # profile.get("tool_calling") returns None when the key is absent (e.g. Bedrock models
+    # whose profile doesn't include this field). Only reject on an explicit False.
+    if llm.profile.get("tool_calling") is False:
         raise SystemExit(
             f"\n[ERROR] Model '{MODEL}' does not support tool calling.\n"
             "Set MODEL to a model that has tool_calling: true in its profile.\n"

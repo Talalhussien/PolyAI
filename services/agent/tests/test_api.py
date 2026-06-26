@@ -1,8 +1,10 @@
 import os
 
 # Must be set before importing app.py, which reads MODEL at module level.
-os.environ.setdefault("MODEL", "google_genai:gemini-2.5-flash")
-os.environ.setdefault("GOOGLE_API_KEY", "fake-key-for-tests")
+os.environ.setdefault("MODEL", "bedrock_converse/anthropic.claude-3-5-haiku-20241022-v1:0")
+os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
+os.environ.setdefault("AWS_ACCESS_KEY_ID", "fake")
+os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "fake")
 
 import pytest
 from fastapi.testclient import TestClient
