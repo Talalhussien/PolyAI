@@ -72,7 +72,21 @@ TOOLS = {
 }
 
 llm = init_chat_model(MODEL, temperature=0)
+
+if llm.profile is not None:
+    if not llm.profile.get("tool_calling"):
+        raise SystemExit(
+            f"\n[ERROR] Model '{MODEL}' does not support tool calling.\n"
+            "Set MODEL to a model that has tool_calling: true in its profile.\n"
+        )
+
 llm_with_tools = llm.bind_tools(list(TOOLS.values()))
+
+
+class TokensUsed(BaseModel):
+    input: int
+    output: int
+    total: int
 
 
 class ChatResponse(BaseModel):
@@ -83,6 +97,7 @@ class ChatResponse(BaseModel):
     iterations: int
     tools_called: list[str]
     context_limit_exceeded: bool
+    tokens_used: TokensUsed
 
 
 
@@ -93,6 +108,9 @@ def run_agent(history: list, max_iterations: int = 10) -> dict:
     prediction_id = None
     annotated_image = None
     context_limit_exceeded = False
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_tokens = 0
     start = time.time()
     while True:
         if iterations >= max_iterations:
@@ -101,12 +119,20 @@ def run_agent(history: list, max_iterations: int = 10) -> dict:
                 content="You've reached the maximum number of steps. Based on everything gathered so far, give your best answer now."
             ))
             response = llm_with_tools.invoke(messages)
+            if response.usage_metadata:
+                total_input_tokens  += response.usage_metadata.get("input_tokens", 0)
+                total_output_tokens += response.usage_metadata.get("output_tokens", 0)
+                total_tokens        += response.usage_metadata.get("total_tokens", 0)
             content = response.content
             if isinstance(content, list):
                 content = "".join(block["text"] for block in content if block.get("type") == "text")
             break
 
         response: AIMessage = llm_with_tools.invoke(messages)
+        if response.usage_metadata:
+            total_input_tokens  += response.usage_metadata.get("input_tokens", 0)
+            total_output_tokens += response.usage_metadata.get("output_tokens", 0)
+            total_tokens        += response.usage_metadata.get("total_tokens", 0)
         messages.append(response)
         iterations += 1
 
@@ -122,6 +148,11 @@ def run_agent(history: list, max_iterations: int = 10) -> dict:
                 "iterations": iterations,
                 "tools_called": tools_called,
                 "context_limit_exceeded": context_limit_exceeded,
+                "tokens_used": TokensUsed(
+                    input=total_input_tokens,
+                    output=total_output_tokens,
+                    total=total_tokens,
+                ),
             }
 
         for tool_call in response.tool_calls:
@@ -149,6 +180,11 @@ def run_agent(history: list, max_iterations: int = 10) -> dict:
         "iterations": iterations,
         "tools_called": tools_called,
         "context_limit_exceeded": context_limit_exceeded,
+        "tokens_used": TokensUsed(
+            input=total_input_tokens,
+            output=total_output_tokens,
+            total=total_tokens,
+        ),
     }
 
 
