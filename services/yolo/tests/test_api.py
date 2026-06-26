@@ -2,8 +2,12 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-# app.py reads CONFIDENCE_THRESHOLD at import time, so set it before importing.
+# Must be set before importing app.py, which reads these at module level.
 os.environ.setdefault("CONFIDENCE_THRESHOLD", "0.5")
+os.environ.setdefault("AWS_REGION", "us-east-1")
+os.environ.setdefault("AWS_S3_BUCKET", "fake-bucket")
+os.environ.setdefault("AWS_ACCESS_KEY_ID", "fake")
+os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "fake")
 
 from app import (
     app,

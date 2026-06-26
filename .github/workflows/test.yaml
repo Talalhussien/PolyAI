@@ -26,6 +26,11 @@ jobs:
       - name: Run tests
         run: pytest tests/
         working-directory: services/yolo
+        env:
+          AWS_REGION: us-east-1
+          AWS_S3_BUCKET: fake-bucket
+          AWS_ACCESS_KEY_ID: fake
+          AWS_SECRET_ACCESS_KEY: fake
 
   agent-tests:
     runs-on: ubuntu-latest
