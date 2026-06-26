@@ -25,11 +25,20 @@ export default function MessageBubble({ message }: { message: ChatMessage }) {
         {isUser ? (
           <p className="whitespace-pre-wrap">{message.content}</p>
         ) : (
-          <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-li:my-0">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {message.content}
-            </ReactMarkdown>
-          </div>
+          <>
+            {message.annotated_image && (
+              <img
+                src={`data:image/jpeg;base64,${message.annotated_image}`}
+                alt="detection result"
+                className="mb-2 max-h-64 w-full rounded-lg object-contain"
+              />
+            )}
+            <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-li:my-0">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {message.content}
+              </ReactMarkdown>
+            </div>
+          </>
         )}
       </div>
     </div>
