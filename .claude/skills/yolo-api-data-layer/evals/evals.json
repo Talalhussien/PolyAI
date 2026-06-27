@@ -1,0 +1,127 @@
+{
+  "skill_name": "yolo-api-data-layer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "refactor the api to work with sqlalchemy",
+      "expected_output": "The YOLO API data layer is refactored from raw sqlite3 to SQLAlchemy. models.py and db.py are created. Raw SQL is replaced with ORM queries. Tests are updated to use dependency_overrides[get_db].",
+      "assertions": [
+        "models.py exists and defines PredictionSession and DetectionObject as SQLAlchemy classes",
+        "db.py exists and defines get_db(), SessionLocal, and create_engine",
+        "app.py does not contain import sqlite3",
+        "app.py does not contain DB_PATH",
+        "app.py does not contain init_db",
+        "app.py does not contain raw SQL strings like CREATE TABLE, INSERT INTO, SELECT, or DELETE",
+        "Every endpoint that reads or writes to the database uses Depends(get_db)",
+        "requirements.txt includes sqlalchemy",
+        "tests/test_api.py uses app.dependency_overrides[get_db]",
+        "tests/test_api.py does not contain DB_PATH or init_db",
+        "Running pytest tests/ manually shows 0 failed"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "make the database backend configurable so we can use postgres in production",
+      "expected_output": "db.py reads DB_BACKEND from environment. SQLite is the default. PostgreSQL is used when DB_BACKEND=postgres using DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME.",
+      "assertions": [
+        "db.py reads DB_BACKEND from environment variables",
+        "db.py uses sqlite:/// as the default URL when DB_BACKEND is not set",
+        "db.py builds a postgresql:// URL when DB_BACKEND is postgres",
+        "db.py reads DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, and DB_NAME from environment variables",
+        "The SQLite engine uses check_same_thread=False",
+        "The PostgreSQL engine does not use check_same_thread",
+        "requirements.txt includes psycopg2-binary",
+        "Running python -c 'import app' does not raise any errors"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "add an endpoint GET /predictions/recent that returns the 10 most recent sessions",
+      "expected_output": "GET /predictions/recent is added to app.py using SQLAlchemy. Returns at most 10 sessions ordered by timestamp descending. Tests verify ordering and limit.",
+      "assertions": [
+        "app.py defines a GET /predictions/recent route",
+        "The route uses Depends(get_db)",
+        "The query orders results by timestamp descending",
+        "The query limits results to 10",
+        "The endpoint does not contain raw SQL strings",
+        "A test verifies the endpoint returns at most 10 sessions",
+        "A test verifies the newest session appears first in the response",
+        "Running pytest tests/ manually shows 0 failed"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "add a UserFeedback table to track user ratings per prediction",
+      "expected_output": "UserFeedback SQLAlchemy model is added to models.py with a ForeignKey to PredictionSession. Tables are created through SQLAlchemy. Existing endpoints are unchanged.",
+      "assertions": [
+        "models.py defines a UserFeedback class that extends Base",
+        "UserFeedback has a ForeignKey linking it to prediction_sessions",
+        "UserFeedback has a rating column",
+        "No raw CREATE TABLE SQL exists anywhere in models.py or db.py",
+        "Existing prediction endpoints still return the same response shapes",
+        "A test seeds a PredictionSession and posts feedback for it",
+        "The feedback test asserts response.status_code before checking the database",
+        "Running pytest tests/ manually shows 0 failed"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "delete a prediction session and all its detection objects by uid",
+      "expected_output": "A DELETE endpoint is added to app.py. Deletion uses SQLAlchemy ORM. DetectionObject rows are removed via cascade or explicit ORM delete. Missing uid returns 404.",
+      "assertions": [
+        "app.py defines a DELETE endpoint for prediction sessions",
+        "Deletion uses SQLAlchemy ORM, not raw DELETE SQL",
+        "DetectionObject rows are removed either through cascade on the relationship or explicit ORM deletion",
+        "A missing uid returns 404",
+        "A test seeds a session with detection objects, calls the delete endpoint, and checks the session row is gone",
+        "A test checks that detection objects are also removed after deletion",
+        "Running pytest tests/ manually shows 0 failed"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "add a column processing_time_ms to the prediction_sessions table",
+      "expected_output": "processing_time_ms is added as a Float or Integer column to PredictionSession in models.py. The /predict endpoint stores this value. No raw ALTER TABLE SQL is used.",
+      "assertions": [
+        "models.py has a processing_time_ms column on PredictionSession",
+        "The column type is Float or Integer",
+        "app.py sets processing_time_ms when saving a PredictionSession in the /predict endpoint",
+        "No ALTER TABLE SQL exists in models.py or app.py",
+        "Existing API response shapes are unchanged",
+        "A test verifies that processing_time_ms is saved to the database after calling /predict",
+        "Running pytest tests/ manually shows 0 failed"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "the database layer doesn't follow our architectural design, fix it",
+      "expected_output": "All raw sqlite3 usage is removed from app.py. Every database-touching endpoint uses Depends(get_db). models.py and db.py exist with correct SQLAlchemy structure.",
+      "assertions": [
+        "app.py does not contain import sqlite3",
+        "app.py does not contain sqlite3.connect",
+        "app.py does not contain raw SQL string literals for prediction data",
+        "Every endpoint that reads or writes prediction data uses Depends(get_db)",
+        "models.py exists with SQLAlchemy ORM models",
+        "db.py exists with get_db defined as a generator",
+        "Running pytest tests/ manually shows 0 failed"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "write tests for the /predict endpoint",
+      "expected_output": "tests/test_api.py contains tests for POST /predict. Tests use app.dependency_overrides[get_db] with an isolated SQLite engine. The YOLO model is mocked. Response shape and database persistence are both asserted.",
+      "assertions": [
+        "tests/test_api.py contains at least one test function for POST /predict",
+        "Tests use app.dependency_overrides[get_db]",
+        "Tests do not import sqlite3",
+        "Tests do not call init_db",
+        "The YOLO model or inference function is mocked so no real inference runs",
+        "The test asserts response.status_code is 200",
+        "The test asserts prediction_uid is present in the response body",
+        "The test asserts detection_count is present in the response body",
+        "The test verifies PredictionSession is saved by querying the database through the db fixture",
+        "Running pytest tests/ manually shows 0 failed"
+      ]
+    }
+  ]
+}
