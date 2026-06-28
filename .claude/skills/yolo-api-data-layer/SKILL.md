@@ -21,11 +21,13 @@ The target architecture is:
 
 This course repo asks agents not to run terminal commands for students.
 
-Do not run `npm`, `pip`, `git`, `pytest`, `python`, `docker`, `grep`, `rg`, or other shell commands unless the user explicitly overrides that rule. Use file read/search/edit tools when available.
+Do not run `npm`, `pip`, `git`, `python`, `docker`, `grep`, `rg`, or other shell commands unless the user explicitly overrides that rule. Use file read/search/edit tools when available.
 
 At the end, tell the student the exact commands to run manually.
 
 Never run destructive git commands such as `git reset --hard`.
+
+Running `pytest` is allowed — but only once, after all file changes are complete. See **Post-Implementation Test Run**.
 
 ## First Inspect
 
@@ -444,6 +446,25 @@ Tests must:
 - Mock YOLO inference for `/predict`
 - Assert status codes and response bodies
 - Verify persistence through SQLAlchemy queries
+
+## Post-Implementation Test Run
+
+After ALL file changes are complete and no further edits remain, run the tests once:
+
+```bash
+pytest tests/
+```
+
+**If tests pass:** report the passing output and stop.
+
+**If tests fail:** stop immediately. Do not edit any files. Do not attempt to fix the failures. Report only:
+
+1. Which tests failed (test name and file)
+2. The exact error message and traceback
+3. The likely cause in one sentence
+4. The manual steps the student should take to investigate or fix
+
+Wait for the student to send a new explicit prompt before making any further changes.
 
 ## Completion Checklist
 

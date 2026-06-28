@@ -11,7 +11,9 @@ Use this skill to write safe, repeatable tests for the YOLO FastAPI API after th
 
 This course repo asks agents not to run terminal commands for students.
 
-Do not run `pytest`, `python`, `grep`, `rg`, `git`, `pip`, `docker`, or other shell commands unless the user explicitly overrides that rule. Write or update the tests, then tell the student the exact commands to run manually.
+Do not run `python`, `grep`, `rg`, `git`, `pip`, `docker`, or other shell commands unless the user explicitly overrides that rule. Write or update the tests, then tell the student the exact commands to run manually.
+
+Running `pytest` is allowed — but only once, after all file changes are complete. See **Post-Implementation Test Run**.
 
 ## Precondition
 
@@ -336,6 +338,25 @@ When a `UserFeedback` model or endpoint exists, tests should verify:
 Always assert `response.status_code` before checking `db.query(UserFeedback)`.
 
 Import `UserFeedback` from `models.py`; do not define it again in tests.
+
+## Post-Implementation Test Run
+
+After ALL file changes are complete and no further edits remain, run the tests once:
+
+```bash
+pytest tests/
+```
+
+**If tests pass:** report the passing output and stop.
+
+**If tests fail:** stop immediately. Do not edit any files. Do not attempt to fix the failures. Report only:
+
+1. Which tests failed (test name and file)
+2. The exact error message and traceback
+3. The likely cause in one sentence
+4. The manual steps the student should take to investigate or fix
+
+Wait for the student to send a new explicit prompt before making any further changes.
 
 ## Manual Verification To Give The Student
 
