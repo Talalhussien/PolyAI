@@ -1,12 +1,13 @@
 import base64
-import io
 import json
 import logging
 import os
 from contextvars import ContextVar
 import time
 from typing import Optional
+import uuid
 
+import boto3
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -27,7 +28,14 @@ from langchain_core.tools import tool
 from pydantic import BaseModel
 
 YOLO_SERVICE_URL = os.environ.get("YOLO_SERVICE_URL", "http://localhost:8080")
-MODEL = os.environ.get("MODEL")
+MODEL         = os.environ.get("MODEL")
+AWS_REGION    = os.environ.get("AWS_REGION")
+AWS_S3_BUCKET = os.environ.get("AWS_S3_BUCKET")
+
+for _var in ("AWS_REGION", "AWS_S3_BUCKET"):
+    if not os.environ.get(_var):
+        raise SystemExit(f"\n[ERROR] Required environment variable '{_var}' is not set.\n"
+                         "Add it to your .env file.\n")
 
 ALLOWED_MODELS = {
     "openai:gpt-5.4-mini",
@@ -49,20 +57,21 @@ SYSTEM_PROMPT = (
     "Use the available tools to extract information from images. "
 )
 
-_current_image_b64: ContextVar[Optional[str]] = ContextVar("current_image_b64", default=None)
+s3_client = boto3.client("s3", region_name=AWS_REGION)
+
+_current_image_s3_key: ContextVar[Optional[str]] = ContextVar("current_image_s3_key", default=None)
 
 @tool
 def detect_objects() -> str:
     """Detect and identify objects in the image provided by the user using YOLO object detection."""
-    image_b64 = _current_image_b64.get()
-    if not image_b64:
+    s3_key = _current_image_s3_key.get()
+    if not s3_key:
         return json.dumps({"error": "No image was provided by the user."})
 
-    image_bytes = base64.b64decode(image_b64)
     with httpx.Client(timeout=30.0) as client:
         response = client.post(
             f"{YOLO_SERVICE_URL}/predict",
-            files={"file": ("image.jpg", io.BytesIO(image_bytes), "image/jpeg")},
+            json={"image_s3_key": s3_key},
         )
         response.raise_for_status()
     return json.dumps(response.json())
@@ -184,10 +193,9 @@ def run_agent(history: list, max_iterations: int = 10) -> dict:
                 result_data = json.loads(tool_result.content)
                 if "prediction_uid" in result_data:
                     prediction_id = result_data["prediction_uid"]
-                    with httpx.Client(timeout=30.0) as client:
-                        img_resp = client.get(f"{YOLO_SERVICE_URL}/prediction/{prediction_id}/image")
-                        if img_resp.status_code == 200:
-                            annotated_image = base64.b64encode(img_resp.content).decode("utf-8")
+                if "predicted_image_s3_key" in result_data:
+                    obj = s3_client.get_object(Bucket=AWS_S3_BUCKET, Key=result_data["predicted_image_s3_key"])
+                    annotated_image = base64.b64encode(obj["Body"].read()).decode("utf-8")
             except Exception:
                 pass
 
@@ -235,12 +243,19 @@ class ChatRequest(BaseModel):
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
     lc_messages = []
-    latest_image = None
+    image_s3_key = None
 
     for msg in request.messages:
         if msg.role == "user":
             if msg.image_base64:
-                latest_image = msg.image_base64
+                image_bytes = base64.b64decode(msg.image_base64)
+                image_s3_key = f"images/{uuid.uuid4()}/original.jpg"
+                s3_client.put_object(
+                    Bucket=AWS_S3_BUCKET,
+                    Key=image_s3_key,
+                    Body=image_bytes,
+                    ContentType="image/jpeg",
+                )
                 content = msg.content + "\n[An image was uploaded. Use existing tools to analyze it according to user instructions.]"
             else:
                 content = msg.content
@@ -248,11 +263,11 @@ def chat(request: ChatRequest):
         else:
             lc_messages.append(AIMessage(content=msg.content))
 
-    token = _current_image_b64.set(latest_image)
+    token = _current_image_s3_key.set(image_s3_key)
     try:
         return ChatResponse(**run_agent(lc_messages))
     finally:
-        _current_image_b64.reset(token)
+        _current_image_s3_key.reset(token)
 
 
 @app.get("/health")

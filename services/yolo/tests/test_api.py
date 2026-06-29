@@ -1,9 +1,14 @@
 import os
 import pytest
 from fastapi.testclient import TestClient
+from unittest.mock import patch, MagicMock
 
-# app.py reads CONFIDENCE_THRESHOLD at import time, so set it before importing.
+# Must be set before importing app.py, which reads these at module level.
 os.environ.setdefault("CONFIDENCE_THRESHOLD", "0.5")
+os.environ.setdefault("AWS_REGION", "us-east-1")
+os.environ.setdefault("AWS_S3_BUCKET", "fake-bucket")
+os.environ.setdefault("AWS_ACCESS_KEY_ID", "fake")
+os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "fake")
 
 from app import (
     app,
@@ -54,9 +59,17 @@ def test_health(client):
 
 def test_predict_detects_objects(client):
     with open(TEST_IMAGE, "rb") as f:
+        image_bytes = f.read()
+
+    mock_body = MagicMock()
+    mock_body.read.return_value = image_bytes
+
+    with patch("app.s3_client") as mock_s3:
+        mock_s3.get_object.return_value = {"Body": mock_body}
+        mock_s3.put_object.return_value = {}
         response = client.post(
             "/predict",
-            files={"file": ("beatles.jpeg", f, "image/jpeg")},
+            json={"image_s3_key": "images/test/original.jpg"},
         )
     assert response.status_code == 200
     body = response.json()
@@ -65,13 +78,10 @@ def test_predict_detects_objects(client):
     assert body["detection_count"] == len(body["labels"])
 
 
-def test_predict_rejects_non_image(client):
-    response = client.post(
-        "/predict",
-        files={"file": ("notes.txt", b"just some text", "text/plain")},
-    )
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Uploaded file must be an image"
+def test_predict_requires_image_s3_key(client):
+    # Missing required field → 422 Unprocessable Entity
+    response = client.post("/predict", json={})
+    assert response.status_code == 422
 
 
 # --- GET /prediction/{uid} ---------------------------------------------------
@@ -93,12 +103,16 @@ def test_get_prediction_by_uid_not_found(client):
 
 # --- GET /prediction/{uid}/image ---------------------------------------------
 
-def test_get_prediction_image_found(client, tmp_path):
-    image_file = tmp_path / "predicted.jpg"
-    image_file.write_bytes(b"fake-image-bytes")
-    seed_session("img-1", predicted_image=str(image_file))
+def test_get_prediction_image_found(client):
+    seed_session("img-1", predicted_image="predictions/img-1/predicted.jpg")
 
-    response = client.get("/prediction/img-1/image")
+    mock_body = MagicMock()
+    mock_body.read.return_value = b"fake-image-bytes"
+
+    with patch("app.s3_client") as mock_s3:
+        mock_s3.get_object.return_value = {"Body": mock_body}
+        response = client.get("/prediction/img-1/image")
+
     assert response.status_code == 200
     assert response.content == b"fake-image-bytes"
 
@@ -109,9 +123,15 @@ def test_get_prediction_image_uid_not_found(client):
 
 
 def test_get_prediction_image_file_missing(client):
-    # Session exists in the DB, but the file on disk is gone.
-    seed_session("img-2", predicted_image="/tmp/this-file-does-not-exist.jpg")
-    response = client.get("/prediction/img-2/image")
+    from botocore.exceptions import ClientError
+    seed_session("img-2", predicted_image="predictions/img-2/predicted.jpg")
+
+    with patch("app.s3_client") as mock_s3:
+        mock_s3.get_object.side_effect = ClientError(
+            {"Error": {"Code": "NoSuchKey", "Message": "Not Found"}}, "GetObject"
+        )
+        response = client.get("/prediction/img-2/image")
+
     assert response.status_code == 404
 
 

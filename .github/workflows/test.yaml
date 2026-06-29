@@ -26,6 +26,11 @@ jobs:
       - name: Run tests
         run: pytest tests/
         working-directory: services/yolo
+        env:
+          AWS_REGION: us-east-1
+          AWS_S3_BUCKET: fake-bucket
+          AWS_ACCESS_KEY_ID: fake
+          AWS_SECRET_ACCESS_KEY: fake
 
   agent-tests:
     runs-on: ubuntu-latest
@@ -46,5 +51,9 @@ jobs:
         run: pytest tests/ -v
         working-directory: services/agent
         env:
-          MODEL: google_genai:gemini-2.5-flash
-          GOOGLE_API_KEY: fake-key-for-tests
+          MODEL: bedrock_converse/anthropic.claude-3-5-haiku-20241022-v1:0
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+          AWS_S3_BUCKET: fake-bucket
+          AWS_ACCESS_KEY_ID: fake
+          AWS_SECRET_ACCESS_KEY: fake

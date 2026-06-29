@@ -3,6 +3,8 @@ import os
 # Must be set before importing app.py, which reads MODEL at module level.
 os.environ.setdefault("MODEL", "bedrock_converse/anthropic.claude-3-5-haiku-20241022-v1:0")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
+os.environ.setdefault("AWS_REGION", "us-east-1")
+os.environ.setdefault("AWS_S3_BUCKET", "fake-bucket")
 os.environ.setdefault("AWS_ACCESS_KEY_ID", "fake")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "fake")
 
@@ -68,7 +70,9 @@ def test_chat_tokens_used_in_response(client):
 
 
 def test_chat_with_image(client):
-    with patch("app.run_agent", return_value=FAKE_AGENT_RESPONSE):
+    with patch("app.run_agent", return_value=FAKE_AGENT_RESPONSE), \
+         patch("app.s3_client") as mock_s3:
+        mock_s3.put_object.return_value = {}
         response = client.post(
             "/chat",
             json={"messages": [
