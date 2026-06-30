@@ -57,3 +57,96 @@ jobs:
           AWS_S3_BUCKET: fake-bucket
           AWS_ACCESS_KEY_ID: fake
           AWS_SECRET_ACCESS_KEY: fake
+
+  scout-yolo:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build YOLO image
+        uses: docker/build-push-action@v5
+        with:
+          context: services/yolo
+          push: false
+          load: true
+          tags: talalhussien/yolo-service:scout
+
+      - name: Scan YOLO image with Docker Scout
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: talalhussien/yolo-service:scout
+          only-severities: critical,high
+          exit-code: false
+
+  scout-agent:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build agent image
+        uses: docker/build-push-action@v5
+        with:
+          context: services/agent
+          push: false
+          load: true
+          tags: talalhussien/agent-service:scout
+
+      - name: Scan agent image with Docker Scout
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: talalhussien/agent-service:scout
+          only-severities: critical,high
+          exit-code: false
+
+  scout-frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: services/frontend
+          push: false
+          load: true
+          tags: talalhussien/frontend-service:scout
+
+      - name: Scan frontend image with Docker Scout
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: talalhussien/frontend-service:scout
+          only-severities: critical,high
+          exit-code: false
