@@ -1,0 +1,59 @@
+services:
+  yolo:
+    image: talalhussien/yolo-service:0.0.1
+    ports:
+      - "8080:8080"
+    env_file:
+      - services/yolo/.env
+    volumes:
+      - ~/.aws:/home/appuser/.aws:ro
+    networks:
+      - polyai-net
+
+  agent:
+    image: talalhussien/agent-service:0.0.1
+    ports:
+      - "8000:8000"
+    env_file:
+      - services/agent/.env
+    environment:
+      - YOLO_SERVICE_URL=http://yolo:8080
+    volumes:
+      - ~/.aws:/home/appuser/.aws:ro
+    networks:
+      - polyai-net
+
+  frontend:
+    image: talalhussien/frontend-service:0.0.1
+    ports:
+      - "3000:3000"
+    networks:
+      - polyai-net
+
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ~/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    networks:
+      - polyai-net
+      - monitoring-net
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - monitoring-net
+
+networks:
+  polyai-net:
+  monitoring-net:
+
+volumes:
+  prometheus-data:
+  grafana-data:
