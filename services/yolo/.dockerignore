@@ -1,0 +1,11 @@
+__pycache__/
+.env
+*.db
+uploads/
+htmlcov/
+.coverage
+coverage.xml
+.pytest_cache/
+tests/
+*.pem
+yolov8n.pt

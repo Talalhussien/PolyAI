@@ -23,12 +23,15 @@ jobs:
             git fetch origin
             git checkout dev
             git reset --hard origin/dev
-            sudo systemctl restart yolo.service
-            sudo systemctl restart agent.service
-            sudo systemctl restart frontend.service
-            sudo systemctl status yolo.service --no-pager
-            sudo systemctl status agent.service --no-pager
-            sudo systemctl status frontend.service --no-pager
+            # sudo systemctl restart yolo.service
+            # sudo systemctl restart agent.service
+            # sudo systemctl restart frontend.service
+            # sudo systemctl status yolo.service --no-pager
+            # sudo systemctl status agent.service --no-pager
+            # sudo systemctl status frontend.service --no-pager
+            docker compose pull
+            docker compose up -d
+            docker compose ps
             echo "DEV deployment completed successfully."
 
   deploy-prod:
@@ -47,10 +50,13 @@ jobs:
             git fetch origin
             git checkout main
             git reset --hard origin/main
-            sudo systemctl restart yolo.service
-            sudo systemctl restart agent.service
-            sudo systemctl restart frontend.service
-            sudo systemctl status yolo.service --no-pager
-            sudo systemctl status agent.service --no-pager
-            sudo systemctl status frontend.service --no-pager
+            # sudo systemctl restart yolo.service
+            # sudo systemctl restart agent.service
+            # sudo systemctl restart frontend.service
+            # sudo systemctl status yolo.service --no-pager
+            # sudo systemctl status agent.service --no-pager
+            # sudo systemctl status frontend.service --no-pager
+            docker compose pull
+            docker compose up -d
+            docker compose ps
             echo "PROD deployment completed successfully."
