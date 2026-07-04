@@ -237,18 +237,18 @@ async def lifespan(app: FastAPI):
     global llm_with_tools
     try:
         from langchain_mcp_adapters.client import MultiServerMCPClient
-        async with MultiServerMCPClient({
+        client = MultiServerMCPClient({
             "img-proc": {
                 "url": f"{MCP_SERVER_URL}/sse",
                 "transport": "sse",
             }
-        }) as mcp_client:
-            mcp_tools = mcp_client.get_tools()
-            for t in mcp_tools:
-                TOOLS[t.name] = t
-            llm_with_tools = llm.bind_tools(list(TOOLS.values()))
-            logging.info(f"MCP tools loaded: {[t.name for t in mcp_tools]}")
-            yield
+        })
+        mcp_tools = await client.get_tools()
+        for t in mcp_tools:
+            TOOLS[t.name] = t
+        llm_with_tools = llm.bind_tools(list(TOOLS.values()))
+        logging.info(f"MCP tools loaded: {[t.name for t in mcp_tools]}")
+        yield
     except Exception as e:
         logging.warning(f"MCP server unavailable ({e}). Image processing tools disabled.")
         yield
