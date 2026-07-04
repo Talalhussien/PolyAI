@@ -10,6 +10,13 @@ services:
     networks:
       - polyai-net
 
+  img-proc-mcp:
+    image: talalhussien/img-proc-mcp:0.0.1
+    ports:
+      - "8001:8000"
+    networks:
+      - polyai-net
+
   agent:
     image: talalhussien/agent-service:0.0.1
     ports:
@@ -18,6 +25,7 @@ services:
       - services/agent/.env
     environment:
       - YOLO_SERVICE_URL=http://yolo:8080
+      - MCP_SERVER_URL=http://img-proc-mcp:8000
     volumes:
       - ~/.aws:/home/appuser/.aws:ro
     networks:
@@ -30,12 +38,24 @@ services:
     networks:
       - polyai-net
 
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:latest
+    command:
+      - '--path.rootfs=/host'
+    network_mode: host
+    pid: host
+    restart: unless-stopped
+    volumes:
+      - '/:/host:ro,rslave'
+
   prometheus:
     image: prom/prometheus
     ports:
       - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      - ~/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     networks:
       - polyai-net
@@ -45,8 +65,11 @@ services:
     image: grafana/grafana
     ports:
       - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
     networks:
       - monitoring-net
 
