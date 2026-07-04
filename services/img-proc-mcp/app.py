@@ -5,7 +5,7 @@ import random
 from mcp.server.fastmcp import FastMCP
 from PIL import Image, ImageFilter
 
-mcp = FastMCP("img-proc")
+mcp = FastMCP("img-proc", host="0.0.0.0")
 
 
 def _decode(b64: str) -> Image.Image:
