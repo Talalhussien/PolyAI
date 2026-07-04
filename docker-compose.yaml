@@ -7,6 +7,7 @@ services:
       - services/yolo/.env
     volumes:
       - ~/.aws:/home/appuser/.aws:ro
+      - ./services/yolo/yolov8n.pt:/app/yolov8n.pt:ro
     networks:
       - polyai-net
 
