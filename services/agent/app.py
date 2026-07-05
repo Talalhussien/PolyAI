@@ -414,11 +414,26 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
                 content = "".join(b["text"] for b in content if b.get("type") == "text")
             return _ret(content)
 
+        # If any MCP tool in this turn operates on the whole image (no label),
+        # detect_objects is pointless — the whole-image path never uses YOLO.
+        has_whole_image_tool = any(
+            tc["name"] in _MCP_IMAGE_TOOLS and not tc.get("args", {}).get("label")
+            for tc in response.tool_calls
+        )
+
         for tool_call in response.tool_calls:
             tool_name = tool_call["name"]
             tools_called.append(tool_name)
             tool_id   = tool_call["id"]
             logging.info(f"Tool call: {tool_name}({tool_call.get('args', {})})")
+
+            if tool_name == "detect_objects" and has_whole_image_tool:
+                logging.info("Skipping detect_objects — whole-image processing tool in same turn")
+                messages.append(ToolMessage(
+                    content="Detection skipped — not needed for whole-image processing.",
+                    tool_call_id=tool_id,
+                ))
+                continue
 
             # ── MCP image tools ───────────────────────────────────────────────
             if tool_name in _MCP_IMAGE_TOOLS:
