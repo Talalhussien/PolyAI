@@ -14,7 +14,7 @@ services:
   img-proc-mcp:
     image: talalhussien/img-proc-mcp:0.0.1
     ports:
-      - "8001:8000"
+      - "9000:9000"
     networks:
       - polyai-net
 
@@ -26,9 +26,10 @@ services:
       - services/agent/.env
     environment:
       - YOLO_SERVICE_URL=http://yolo:8080
-      - MCP_SERVER_URL=http://img-proc-mcp:8000
+      - MCP_SERVER_URL=http://img-proc-mcp:9000
     volumes:
       - ~/.aws:/home/appuser/.aws:ro
+      - ./services/agent:/app
     networks:
       - polyai-net
 

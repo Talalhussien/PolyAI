@@ -27,12 +27,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.rate_limiters import InMemoryRateLimiter
-from langchain_core.tools import tool
-from PIL import Image as PILImage
-from pydantic import BaseModel
+from langchain_core.tools import tool, StructuredTool
+from PIL import Image as PILImage, ImageDraw
+from pydantic import BaseModel, Field
 
 YOLO_SERVICE_URL  = os.environ.get("YOLO_SERVICE_URL", "http://localhost:8080")
-MCP_SERVER_URL    = os.environ.get("MCP_SERVER_URL", "http://localhost:8000")
+MCP_SERVER_URL    = os.environ.get("MCP_SERVER_URL", "http://localhost:9000")
 MODEL             = os.environ.get("MODEL")
 AWS_REGION        = os.environ.get("AWS_REGION")
 AWS_S3_BUCKET     = os.environ.get("AWS_S3_BUCKET")
@@ -58,19 +58,54 @@ if MODEL not in ALLOWED_MODELS:
     )
 
 SYSTEM_PROMPT = (
-    "You are an AI vision assistant. You help users understand and analyze images. "
-    "Use the available tools to extract information from images and apply image processing. "
-    "For operations on the entire image, use get_image_from_s3 first, then pass the result to the image tool. "
-    "For operations on a specific object (e.g. 'blur the second dog'), use get_object_region first to "
-    "extract the object, then apply the image processing tool to the returned base64 image. "
-    "When order matters (e.g. 'from the right'), pass order='right_to_left' to get_object_region."
+    "You are an AI vision assistant. Follow these rules exactly:\n"
+    "\n"
+    "1. To identify objects: call detect_objects.\n"
+    "\n"
+    "2. To process the ENTIRE image (no specific object): call the tool WITHOUT label.\n"
+    "   Examples:\n"
+    "     rotate(angle=90)               ← rotate whole image\n"
+    "     blur(radius=3)                 ← blur whole image\n"
+    "     flip(direction='horizontal')   ← flip whole image\n"
+    "\n"
+    "3. To process SPECIFIC OBJECT(S): call the tool WITH label='<class>'.\n"
+    "\n"
+    "   Selection parameters:\n"
+    "   - label:       required — object class, e.g. 'car', 'person', 'dog'\n"
+    "   - indices:     0-based positions after sorting left-to-right.\n"
+    "                  [0]=first  [1]=second  [0,2]=1st and 3rd  [0,1]=first two\n"
+    "   - from_right:  True → sort right-to-left before applying indices\n"
+    "   - all_objects: True → process ALL matching objects\n"
+    "\n"
+    "   Default (no indices, no all_objects): processes the LEFTMOST object.\n"
+    "\n"
+    "   Examples:\n"
+    "     blur(radius=3, label='car')                                ← leftmost car\n"
+    "     blur(radius=3, label='car', indices=[1])                   ← 2nd car from left\n"
+    "     blur(radius=3, label='car', indices=[1], from_right=True)  ← 2nd car from right\n"
+    "     blur(radius=3, label='person', indices=[0, 2])             ← 1st and 3rd person\n"
+    "     blur(radius=3, label='person', indices=[0, 1])             ← first two persons\n"
+    "     blur(radius=3, label='car', all_objects=True)              ← all cars\n"
+    "\n"
+    "4. NEVER call detect_objects before a processing tool — processing runs detection internally.\n"
+    "\n"
+    "5. NEVER call the same image tool more than once per turn to fix different objects.\n"
+    "   Wrong: blur(label='car', indices=[0]) then blur(label='car', indices=[2])\n"
+    "   Right: blur(label='car', indices=[0, 2]) — one call, both objects.\n"
+    "\n"
+    "6. NEVER call detect_objects after a processing tool — the processing result IS the output.\n"
+    "   Calling detect_objects after processing replaces the processed image with a detection image.\n"
+    "\n"
+    "7. After every tool result, respond naturally to the user."
 )
 
 s3_client = boto3.client("s3", region_name=AWS_REGION)
 
 _current_image_s3_key: ContextVar[Optional[str]] = ContextVar("current_image_s3_key", default=None)
+# Caches the last YOLO detection result within a single request so _get_all_regions
+# reuses the same prediction instead of triggering a second (potentially different) run.
+_yolo_cache: ContextVar[Optional[dict]] = ContextVar("yolo_cache", default=None)
 
-# Tools the agent can call. MCP tools are added at startup via lifespan.
 TOOLS: dict = {}
 
 
@@ -84,102 +119,145 @@ def detect_objects() -> str:
         return json.dumps({"error": "No image was provided by the user."})
 
     with httpx.Client(timeout=30.0) as client:
-        response = client.post(
+        resp = client.post(
             f"{YOLO_SERVICE_URL}/predict",
             json={"image_s3_key": s3_key},
         )
-        response.raise_for_status()
-    return json.dumps(response.json())
+        resp.raise_for_status()
+        uid = resp.json()["prediction_uid"]
+        det = client.get(f"{YOLO_SERVICE_URL}/prediction/{uid}")
+        det.raise_for_status()
+    return json.dumps(det.json())
 
 
-@tool
-def get_image_from_s3() -> str:
+TOOLS = {detect_objects.name: detect_objects}
+
+
+# ── Server-side image helpers (never passed through the LLM) ──────────────────
+
+def _fetch_full_image(s3_key: str) -> str:
+    """Fetch image from S3, compress to ≤512 px, return base64 JPEG."""
+    obj = s3_client.get_object(Bucket=AWS_S3_BUCKET, Key=s3_key)
+    img = PILImage.open(io.BytesIO(obj["Body"].read())).convert("RGB")
+    img.thumbnail((512, 512), PILImage.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=60)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def _get_all_regions(s3_key: str, label: str, from_right: bool = False) -> list[dict]:
     """
-    Download the current user image from S3 as a base64 PNG string.
-    Use this before calling image processing tools (blur, rotate, flip, resize, crop, add_noise)
-    when you need to process the entire image.
-    Returns a base64 PNG string on success, or a JSON error string on failure.
+    Return all valid bounding boxes for *label*, sorted left-to-right by x1
+    (reversed when from_right=True).  Reuses a cached YOLO prediction from
+    the same request when available; otherwise runs a fresh two-step YOLO call.
+    Each entry: {"bbox": [x1,y1,x2,y2], "score": float}
+    Malformed boxes are silently skipped.
     """
-    s3_key = _current_image_s3_key.get()
-    if not s3_key:
-        return json.dumps({"error": "No image was provided by the user."})
-    try:
-        obj = s3_client.get_object(Bucket=AWS_S3_BUCKET, Key=s3_key)
-        img = PILImage.open(io.BytesIO(obj["Body"].read())).convert("RGB")
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        return base64.b64encode(buf.getvalue()).decode()
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-
-
-@tool
-def get_object_region(label: str, index: int = 0, order: str = "left_to_right") -> str:
-    """
-    Extract a specific detected object from the image as a base64 PNG string.
-    Use this before applying image processing to a specific object
-    (e.g. 'blur the second dog', 'add noise to the car').
-
-    Args:
-        label: Object type to find, e.g. 'dog', 'car', 'person'.
-        index: Which instance to pick after sorting (0=first, 1=second, etc.).
-        order: Sort direction — 'left_to_right' or 'right_to_left'.
-
-    Returns a base64 PNG string of the cropped object region,
-    or a JSON error string if not found.
-    """
-    s3_key = _current_image_s3_key.get()
-    if not s3_key:
-        return json.dumps({"error": "No image was provided by the user."})
-
-    # Run YOLO detection
-    try:
+    cache = _yolo_cache.get()
+    if cache and cache.get("s3_key") == s3_key:
+        prediction = cache["prediction"]
+        logging.info("_get_all_regions: reusing cached YOLO prediction")
+    else:
         with httpx.Client(timeout=30.0) as client:
-            resp = client.post(
-                f"{YOLO_SERVICE_URL}/predict",
-                json={"image_s3_key": s3_key},
-            )
+            resp = client.post(f"{YOLO_SERVICE_URL}/predict", json={"image_s3_key": s3_key})
             resp.raise_for_status()
-        prediction = resp.json()
-    except Exception as e:
-        return json.dumps({"error": f"YOLO detection failed: {e}"})
+            uid = resp.json()["prediction_uid"]
+            det = client.get(f"{YOLO_SERVICE_URL}/prediction/{uid}")
+            det.raise_for_status()
+        prediction = det.json()
+        _yolo_cache.set({"s3_key": s3_key, "prediction": prediction})
 
-    # Filter by label
-    matches = [o for o in prediction.get("detection_objects", []) if o["label"] == label]
-    if not matches:
-        available = list({o["label"] for o in prediction.get("detection_objects", [])})
-        return json.dumps({"error": f"No '{label}' detected. Found: {available}"})
+    regions = []
+    for obj in prediction.get("detection_objects", []):
+        if obj["label"].lower() != label.lower():
+            continue
+        try:
+            box = ast.literal_eval(obj["box"])
+            x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
+            if x2 > x1 and y2 > y1:
+                regions.append({"bbox": [x1, y1, x2, y2], "score": obj.get("score", 0.0)})
+        except (ValueError, IndexError, TypeError):
+            continue
 
-    # Sort by x1 position
-    matches.sort(
-        key=lambda o: ast.literal_eval(o["box"])[0],
-        reverse=(order == "right_to_left"),
+    regions.sort(key=lambda r: r["bbox"][0], reverse=from_right)
+    return regions
+
+
+def _upload_image(b64: str) -> tuple[str, Optional[str]]:
+    """
+    Upload a base64-encoded image to S3.
+    Returns (s3_key, presigned_url).  presigned_url is None on error.
+    """
+    ext = "png" if b64[:4] == "iVBO" else "jpg"
+    ct  = "image/png" if ext == "png" else "image/jpeg"
+    key = f"processed/{uuid.uuid4()}/result.{ext}"
+    s3_client.put_object(
+        Bucket=AWS_S3_BUCKET,
+        Key=key,
+        Body=base64.b64decode(b64),
+        ContentType=ct,
     )
-
-    if index >= len(matches):
-        return json.dumps({"error": f"Only {len(matches)} '{label}' found, cannot pick index {index}."})
-
-    # Crop the bounding box region
-    box = ast.literal_eval(matches[index]["box"])
-    x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
     try:
-        obj = s3_client.get_object(Bucket=AWS_S3_BUCKET, Key=s3_key)
-        img = PILImage.open(io.BytesIO(obj["Body"].read()))
-        cropped = img.crop((x1, y1, x2, y2))
-        buf = io.BytesIO()
-        cropped.save(buf, format="PNG")
-        return base64.b64encode(buf.getvalue()).decode()
-    except Exception as e:
-        return json.dumps({"error": str(e)})
+        url = s3_client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": AWS_S3_BUCKET, "Key": key},
+            ExpiresIn=3600,
+        )
+    except Exception:
+        url = None
+    return key, url
 
 
-TOOLS = {
-    detect_objects.name:    detect_objects,
-    get_image_from_s3.name: get_image_from_s3,
-    get_object_region.name: get_object_region,
+# ── MCP image tool stubs — image_b64 injected server-side ────────────────────
+
+class _ImgBase(BaseModel):
+    label: Optional[str]        = Field(None,  description="Object class to target. Omit to process the entire image.")
+    indices: Optional[list[int]] = Field(None, description="0-based indices of objects to process (left-to-right). E.g. [0]=first, [0,2]=1st & 3rd. Ignored when all_objects=True.")
+    all_objects: bool            = Field(False, description="If True, process ALL detected objects with the given label.")
+    from_right: bool             = Field(False, description="If True, sort objects right-to-left before applying indices.")
+
+class _BlurInput(_ImgBase):
+    radius: float = Field(2.0, description="Blur radius in pixels")
+
+class _RotateInput(_ImgBase):
+    angle: float = Field(90.0, description="Rotation angle in degrees counter-clockwise")
+
+class _FlipInput(_ImgBase):
+    direction: str = Field("horizontal", description="'horizontal' or 'vertical'")
+
+class _ResizeInput(_ImgBase):
+    width:  int = Field(256, description="Target width in pixels")
+    height: int = Field(256, description="Target height in pixels")
+
+class _CropInput(_ImgBase):
+    x1: int = Field(0,   description="Left boundary (used only for whole-image crop; ignored when label is set)")
+    y1: int = Field(0,   description="Top boundary (used only for whole-image crop; ignored when label is set)")
+    x2: int = Field(100, description="Right boundary (used only for whole-image crop; ignored when label is set)")
+    y2: int = Field(100, description="Bottom boundary (used only for whole-image crop; ignored when label is set)")
+
+class _AddNoiseInput(_ImgBase):
+    amount: float = Field(0.05, description="Fraction of pixels to corrupt (0.0–1.0)")
+
+
+def _stub(**_) -> str:
+    return ""
+
+
+_MCP_STUB_TOOLS: dict = {
+    "blur":      StructuredTool.from_function(_stub, name="blur",      description="Apply Gaussian blur. Omit label for whole image; set label to target objects.",        args_schema=_BlurInput),
+    "rotate":    StructuredTool.from_function(_stub, name="rotate",    description="Rotate image. Omit label for whole image; set label to target objects.",               args_schema=_RotateInput),
+    "flip":      StructuredTool.from_function(_stub, name="flip",      description="Flip image. Omit label for whole image; set label to target objects.",                 args_schema=_FlipInput),
+    "resize":    StructuredTool.from_function(_stub, name="resize",    description="Resize image. Omit label for whole image; set label to target objects.",               args_schema=_ResizeInput),
+    "crop":      StructuredTool.from_function(_stub, name="crop",      description="Crop full image to given coords (no label), or extract a specific object (with label).", args_schema=_CropInput),
+    "add_noise": StructuredTool.from_function(_stub, name="add_noise", description="Add salt-and-pepper noise. Omit label for whole image; set label to target objects.", args_schema=_AddNoiseInput),
 }
 
-# Bedrock on-demand default: ~50 RPM for Claude models.
+_MCP_IMAGE_TOOLS: set = set(_MCP_STUB_TOOLS.keys())
+_MCP_TOOLS_IMPL:  dict = {}
+
+TOOLS.update(_MCP_STUB_TOOLS)
+
+# Bedrock on-demand default: ~50 RPM
 rate_limiter = InMemoryRateLimiter(
     requests_per_second=50 / 60,
     check_every_n_seconds=0.1,
@@ -201,15 +279,56 @@ if llm.profile is not None:
 
 llm_with_tools = llm.bind_tools(list(TOOLS.values()))
 
-# Names of MCP image-processing tools — their raw base64 return value
-# is captured as the annotated_image shown to the user.
-_MCP_IMAGE_TOOLS = {"blur", "rotate", "flip", "resize", "crop", "add_noise"}
+
+# ── FastAPI lifespan — connect to MCP server ──────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global llm_with_tools
+    try:
+        from langchain_mcp_adapters.client import MultiServerMCPClient
+        client = MultiServerMCPClient({
+            "img-proc": {
+                "url": f"{MCP_SERVER_URL}/mcp",
+                "transport": "streamable_http",
+            }
+        })
+        mcp_tools = await client.get_tools()
+        for t in mcp_tools:
+            if t.name in _MCP_IMAGE_TOOLS:
+                _MCP_TOOLS_IMPL[t.name] = t
+        logging.info(f"MCP tools loaded (streamable_http): {list(_MCP_TOOLS_IMPL.keys())}")
+        yield
+    except Exception as e:
+        logging.warning(f"MCP server unavailable ({e}). Image processing tools disabled.")
+        yield
+
+
+# ── Agent models ──────────────────────────────────────────────────────────────
+
+class TokensUsed(BaseModel):
+    input: int
+    output: int
+    total: int
+
+
+class ChatResponse(BaseModel):
+    response: str
+    prediction_id: Optional[str] = None
+    processed_image_base64: Optional[str] = None
+    processed_image_s3_key: Optional[str] = None
+    processed_image_url: Optional[str] = None
+    annotated_image: Optional[str] = None   # deprecated alias for processed_image_base64
+    agent_loop_time_s: float
+    iterations: int
+    tools_called: list[str]
+    context_limit_exceeded: bool
+    tokens_used: TokensUsed
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _tool_content_text(content) -> str:
-    """Extract plain text from a ToolMessage content (str or list of blocks)."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -224,72 +343,52 @@ def _tool_content_text(content) -> str:
 
 
 def _is_base64_image(s: str) -> bool:
-    """Return True if s looks like a base64-encoded PNG or JPEG."""
     if not isinstance(s, str) or len(s) < 100:
         return False
-    return s.startswith(("iVBO", "/9j/"))   # PNG or JPEG magic bytes in base64
-
-
-# ── FastAPI lifespan — connect to MCP server ──────────────────────────────────
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global llm_with_tools
-    try:
-        from langchain_mcp_adapters.client import MultiServerMCPClient
-        client = MultiServerMCPClient({
-            "img-proc": {
-                "url": f"{MCP_SERVER_URL}/sse",
-                "transport": "sse",
-            }
-        })
-        mcp_tools = await client.get_tools()
-        for t in mcp_tools:
-            TOOLS[t.name] = t
-        llm_with_tools = llm.bind_tools(list(TOOLS.values()))
-        logging.info(f"MCP tools loaded: {[t.name for t in mcp_tools]}")
-        yield
-    except Exception as e:
-        logging.warning(f"MCP server unavailable ({e}). Image processing tools disabled.")
-        yield
+    return s.startswith(("iVBO", "/9j/"))
 
 
 # ── Agent loop ────────────────────────────────────────────────────────────────
 
-class TokensUsed(BaseModel):
-    input: int
-    output: int
-    total: int
-
-
-class ChatResponse(BaseModel):
-    response: str
-    prediction_id: Optional[str] = None
-    annotated_image: Optional[str] = None
-    agent_loop_time_s: float
-    iterations: int
-    tools_called: list[str]
-    context_limit_exceeded: bool
-    tokens_used: TokensUsed
-
-
 async def run_agent(history: list, max_iterations: int = 10) -> dict:
-    messages = [SystemMessage(content=SYSTEM_PROMPT)] + history
-    iterations = 0
-    tools_called = []
-    prediction_id = None
-    annotated_image = None
+    messages              = [SystemMessage(content=SYSTEM_PROMPT)] + history
+    iterations            = 0
+    tools_called          = []
+    prediction_id         = None
+    annotated_image       = None
+    processed_s3_key      = None
+    processed_url         = None
+    _processing_tool_ran  = False   # True once any MCP image tool sets a result
     context_limit_exceeded = False
-    total_input_tokens = 0
-    total_output_tokens = 0
-    total_tokens = 0
-    start = time.time()
+    total_input_tokens    = 0
+    total_output_tokens   = 0
+    total_tokens          = 0
+    start                 = time.time()
+
+    def _ret(content: str) -> dict:
+        return {
+            "response":               content,
+            "prediction_id":          prediction_id,
+            "processed_image_base64": annotated_image,
+            "processed_image_s3_key": processed_s3_key,
+            "processed_image_url":    processed_url,
+            "annotated_image":        annotated_image,
+            "agent_loop_time_s":      round(time.time() - start, 3),
+            "iterations":             iterations,
+            "tools_called":           tools_called,
+            "context_limit_exceeded": context_limit_exceeded,
+            "tokens_used": TokensUsed(
+                input=total_input_tokens,
+                output=total_output_tokens,
+                total=total_tokens,
+            ),
+        }
 
     while True:
         if iterations >= max_iterations:
             context_limit_exceeded = True
             messages.append(HumanMessage(
-                content="You've reached the maximum number of steps. Based on everything gathered so far, give your best answer now."
+                content="You've reached the maximum number of steps. Give your best answer now."
             ))
             response = await llm_with_tools.ainvoke(messages)
             if response.usage_metadata:
@@ -298,7 +397,7 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
                 total_tokens        += response.usage_metadata.get("total_tokens", 0)
             content = response.content
             if isinstance(content, list):
-                content = "".join(block["text"] for block in content if block.get("type") == "text")
+                content = "".join(b["text"] for b in content if b.get("type") == "text")
             break
 
         response: AIMessage = await llm_with_tools.ainvoke(messages)
@@ -312,60 +411,262 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
         if not response.tool_calls:
             content = response.content
             if isinstance(content, list):
-                content = "".join(block["text"] for block in content if block.get("type") == "text")
-            return {
-                "response": content,
-                "prediction_id": prediction_id,
-                "annotated_image": annotated_image,
-                "agent_loop_time_s": round(time.time() - start, 3),
-                "iterations": iterations,
-                "tools_called": tools_called,
-                "context_limit_exceeded": context_limit_exceeded,
-                "tokens_used": TokensUsed(
-                    input=total_input_tokens,
-                    output=total_output_tokens,
-                    total=total_tokens,
-                ),
-            }
+                content = "".join(b["text"] for b in content if b.get("type") == "text")
+            return _ret(content)
 
         for tool_call in response.tool_calls:
             tool_name = tool_call["name"]
             tools_called.append(tool_name)
-            tool_fn = TOOLS[tool_name]
-            tool_result = await tool_fn.ainvoke(tool_call)
-            messages.append(tool_result)
+            tool_id   = tool_call["id"]
+            logging.info(f"Tool call: {tool_name}({tool_call.get('args', {})})")
 
-            content_text = _tool_content_text(tool_result.content)
+            # ── MCP image tools ───────────────────────────────────────────────
+            if tool_name in _MCP_IMAGE_TOOLS:
+                s3_key    = _current_image_s3_key.get()
+                real_tool = _MCP_TOOLS_IMPL.get(tool_name)
 
-            # Extract prediction info from YOLO results
-            try:
-                result_data = json.loads(content_text)
-                if "prediction_uid" in result_data:
-                    prediction_id = result_data["prediction_uid"]
-                if "predicted_image_s3_key" in result_data:
-                    obj = s3_client.get_object(Bucket=AWS_S3_BUCKET, Key=result_data["predicted_image_s3_key"])
-                    annotated_image = base64.b64encode(obj["Body"].read()).decode("utf-8")
-            except (json.JSONDecodeError, TypeError, ValueError):
-                pass
+                if not s3_key:
+                    messages.append(ToolMessage(
+                        content="No image was provided. Please upload an image first.",
+                        tool_call_id=tool_id,
+                    ))
+                    continue
 
-            # Capture processed image returned by MCP image tools
-            if tool_name in _MCP_IMAGE_TOOLS and _is_base64_image(content_text):
-                annotated_image = content_text
+                if not real_tool:
+                    messages.append(ToolMessage(
+                        content=f"Image processing tool '{tool_name}' is currently unavailable.",
+                        tool_call_id=tool_id,
+                    ))
+                    continue
 
-    return {
-        "response": content,
-        "prediction_id": prediction_id,
-        "annotated_image": annotated_image,
-        "agent_loop_time_s": round(time.time() - start, 3),
-        "iterations": iterations,
-        "tools_called": tools_called,
-        "context_limit_exceeded": context_limit_exceeded,
-        "tokens_used": TokensUsed(
-            input=total_input_tokens,
-            output=total_output_tokens,
-            total=total_tokens,
-        ),
-    }
+                args        = dict(tool_call.get("args", {}))
+                label       = args.pop("label",       None)
+                indices     = args.pop("indices",     None)
+                all_objects = bool(args.pop("all_objects", False))
+                from_right  = bool(args.pop("from_right",  False))
+
+                # ── Whole-image path ──────────────────────────────────────────
+                if not label:
+                    img_b64 = _fetch_full_image(s3_key)
+                    args["image_b64"] = img_b64
+                    mcp_result  = await real_tool.ainvoke(
+                        {"name": tool_name, "args": args, "id": tool_id, "type": "tool_call"}
+                    )
+                    result_text = _tool_content_text(mcp_result.content)
+
+                    if _is_base64_image(result_text):
+                        annotated_image              = result_text
+                        processed_s3_key, processed_url = _upload_image(annotated_image)
+                        _processing_tool_ran         = True
+                        messages.append(ToolMessage(content="Image processed successfully.", tool_call_id=tool_id))
+                    else:
+                        messages.append(ToolMessage(content=result_text, tool_call_id=tool_id))
+                    continue
+
+                # ── Object-specific path ──────────────────────────────────────
+                try:
+                    regions = _get_all_regions(s3_key, label, from_right)
+                except Exception as exc:
+                    messages.append(ToolMessage(
+                        content=f"YOLO detection failed: {exc}",
+                        tool_call_id=tool_id,
+                    ))
+                    continue
+
+                if not regions:
+                    messages.append(ToolMessage(
+                        content=f"I could not find any '{label}' in the image.",
+                        tool_call_id=tool_id,
+                    ))
+                    continue
+
+                n = len(regions)
+
+                # Resolve selected indices
+                if all_objects:
+                    selected = list(range(n))
+                elif indices:
+                    bad = [i for i in indices if not (-n <= i < n)]
+                    if bad:
+                        messages.append(ToolMessage(
+                            content=(
+                                f"Index error: only {n} '{label}' found. "
+                                f"Invalid indices: {bad}. Valid range: 0–{n-1}."
+                            ),
+                            tool_call_id=tool_id,
+                        ))
+                        continue
+                    selected = [i % n for i in indices]
+                else:
+                    selected = [0]  # default: leftmost
+
+                # ── Crop + label: extract region, no composite ────────────────
+                if tool_name == "crop":
+                    region        = regions[selected[0]]
+                    x1, y1, x2, y2 = region["bbox"]
+                    s3_obj = s3_client.get_object(Bucket=AWS_S3_BUCKET, Key=s3_key)
+                    orig   = PILImage.open(io.BytesIO(s3_obj["Body"].read())).convert("RGB")
+                    crop_pil = orig.crop((x1, y1, x2, y2))
+                    buf = io.BytesIO()
+                    crop_pil.save(buf, format="JPEG", quality=75)
+                    annotated_image              = base64.b64encode(buf.getvalue()).decode()
+                    processed_s3_key, processed_url = _upload_image(annotated_image)
+                    note = f" (first of {len(selected)} selected)" if len(selected) > 1 else ""
+                    messages.append(ToolMessage(
+                        content=f"'{label}' region extracted{note}.",
+                        tool_call_id=tool_id,
+                    ))
+                    continue
+
+                # ── All other tools: crop → MCP → composite ───────────────────
+                s3_obj = s3_client.get_object(Bucket=AWS_S3_BUCKET, Key=s3_key)
+                orig   = PILImage.open(io.BytesIO(s3_obj["Body"].read())).convert("RGB")
+
+                processed_count = 0
+                errors: list[str] = []
+
+                for sel_idx in selected:
+                    region        = regions[sel_idx]
+                    x1, y1, x2, y2 = region["bbox"]
+                    bw, bh = x2 - x1, y2 - y1
+                    logging.info(
+                        f"  [{label}][{sel_idx}] bbox=[{x1},{y1},{x2},{y2}] "
+                        f"crop={bw}x{bh} score={region.get('score', '?'):.2f}"
+                    )
+
+                    # Crop from the running composite (accumulates edits)
+                    cropped = orig.crop((x1, y1, x2, y2))
+                    buf = io.BytesIO()
+                    cropped.save(buf, format="JPEG", quality=75)
+                    img_b64 = base64.b64encode(buf.getvalue()).decode()
+
+                    tool_args = {**args, "image_b64": img_b64}
+                    try:
+                        mcp_result  = await real_tool.ainvoke(
+                            {"name": tool_name, "args": tool_args, "id": tool_id, "type": "tool_call"}
+                        )
+                        result_text = _tool_content_text(mcp_result.content)
+                        if _is_base64_image(result_text):
+                            processed = PILImage.open(
+                                io.BytesIO(base64.b64decode(result_text))
+                            ).convert("RGB")
+                            if tool_name == "resize":
+                                # For resize: show actual size change by sampling background,
+                                # clearing the bbox, then centering the resized result in it.
+                                border_pixels = []
+                                orig_rgb = orig.load()
+                                for bx in range(x1, x2):
+                                    if y1 > 0:
+                                        border_pixels.append(orig_rgb[bx, y1 - 1])
+                                    if y2 < orig.height:
+                                        border_pixels.append(orig_rgb[bx, y2])
+                                for by in range(y1, y2):
+                                    if x1 > 0:
+                                        border_pixels.append(orig_rgb[x1 - 1, by])
+                                    if x2 < orig.width:
+                                        border_pixels.append(orig_rgb[x2, by])
+                                if border_pixels:
+                                    avg_color = tuple(
+                                        int(sum(c[i] for c in border_pixels) / len(border_pixels))
+                                        for i in range(3)
+                                    )
+                                else:
+                                    avg_color = (128, 128, 128)
+                                ImageDraw.Draw(orig).rectangle([x1, y1, x2 - 1, y2 - 1], fill=avg_color)
+                                pw, ph = processed.size
+                                cx = x1 + (bw - pw) // 2
+                                cy = y1 + (bh - ph) // 2
+                                # Clamp to canvas bounds
+                                cx = max(0, min(cx, orig.width  - pw))
+                                cy = max(0, min(cy, orig.height - ph))
+                                orig.paste(processed, (cx, cy))
+                                logging.info(
+                                    f"    → resize: cleared {bw}x{bh} bbox, pasted "
+                                    f"{pw}x{ph} at ({cx},{cy}) ✓"
+                                )
+                            else:
+                                # All other tools: force-fit processed result back into bbox
+                                orig.paste(
+                                    processed.resize((bw, bh), PILImage.LANCZOS),
+                                    (x1, y1),
+                                )
+                                logging.info(f"    → pasted {bw}x{bh} at ({x1},{y1}) ✓")
+                            processed_count += 1
+                        else:
+                            logging.warning(
+                                f"    → MCP returned non-image (len={len(result_text)}, "
+                                f"preview={result_text[:60]!r})"
+                            )
+                            errors.append(f"{label}[{sel_idx}]: unexpected MCP response")
+                    except Exception as exc:
+                        logging.warning(f"    → MCP exception for {label}[{sel_idx}]: {exc}")
+                        errors.append(f"{label}[{sel_idx}]: {exc}")
+
+                if processed_count == 0:
+                    messages.append(ToolMessage(
+                        content=f"Processing failed for all selected objects. {'; '.join(errors)}",
+                        tool_call_id=tool_id,
+                    ))
+                    continue
+
+                orig.thumbnail((768, 768), PILImage.LANCZOS)
+                buf = io.BytesIO()
+                orig.save(buf, format="JPEG", quality=70)
+                annotated_image              = base64.b64encode(buf.getvalue()).decode()
+                processed_s3_key, processed_url = _upload_image(annotated_image)
+                _processing_tool_ran         = True
+
+                confirm = f"Processed {processed_count}/{len(selected)} {label}(s) successfully."
+                if errors:
+                    confirm += f" Note: {'; '.join(errors)}."
+                messages.append(ToolMessage(content=confirm, tool_call_id=tool_id))
+
+            # ── Local tools (detect_objects) ──────────────────────────────────
+            else:
+                tool_fn = TOOLS.get(tool_name)
+                if not tool_fn:
+                    messages.append(ToolMessage(
+                        content=f"Unknown tool '{tool_name}'.",
+                        tool_call_id=tool_id,
+                    ))
+                    continue
+
+                tool_result  = await tool_fn.ainvoke(tool_call)
+                messages.append(tool_result)
+
+                content_text = _tool_content_text(tool_result.content)
+                try:
+                    result_data = json.loads(content_text)
+                    if "prediction_uid" in result_data:
+                        prediction_id = result_data["prediction_uid"]
+                    # Cache the prediction in the main async context so that
+                    # _get_all_regions can reuse it without a second YOLO call.
+                    # Must be done here (not inside the @tool thread) because
+                    # ContextVar writes from run_in_executor threads don't propagate.
+                    s3_key_now = _current_image_s3_key.get()
+                    if s3_key_now and "detection_objects" in result_data:
+                        _yolo_cache.set({"s3_key": s3_key_now, "prediction": result_data})
+                        logging.info(
+                            f"YOLO cache populated: {len(result_data['detection_objects'])} objects"
+                        )
+                    pred_key = (result_data.get("predicted_image_s3_key")
+                                or result_data.get("predicted_image"))
+                    if pred_key and not _processing_tool_ran:
+                        obj = s3_client.get_object(Bucket=AWS_S3_BUCKET, Key=pred_key)
+                        annotated_image  = base64.b64encode(obj["Body"].read()).decode("utf-8")
+                        processed_s3_key = pred_key
+                        try:
+                            processed_url = s3_client.generate_presigned_url(
+                                "get_object",
+                                Params={"Bucket": AWS_S3_BUCKET, "Key": pred_key},
+                                ExpiresIn=3600,
+                            )
+                        except Exception:
+                            processed_url = None
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    pass
+
+    return _ret(content)
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
@@ -400,13 +701,13 @@ class ChatRequest(BaseModel):
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    lc_messages = []
+    lc_messages  = []
     image_s3_key = None
 
     for msg in request.messages:
         if msg.role == "user":
             if msg.image_base64:
-                image_bytes = base64.b64decode(msg.image_base64)
+                image_bytes  = base64.b64decode(msg.image_base64)
                 image_s3_key = f"images/{uuid.uuid4()}/original.jpg"
                 s3_client.put_object(
                     Bucket=AWS_S3_BUCKET,

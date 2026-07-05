@@ -1,7 +1,7 @@
 import os
 
 # Must be set before importing app.py, which reads MODEL at module level.
-os.environ.setdefault("MODEL", "bedrock_converse/anthropic.claude-3-5-haiku-20241022-v1:0")
+os.environ.setdefault("MODEL", "bedrock_converse/amazon.nova-lite-v1:0")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 os.environ.setdefault("AWS_REGION", "us-east-1")
 os.environ.setdefault("AWS_S3_BUCKET", "fake-bucket")
@@ -18,6 +18,9 @@ from app import app, TokensUsed
 FAKE_AGENT_RESPONSE = {
     "response": "I see 2 people.",
     "prediction_id": None,
+    "processed_image_base64": None,
+    "processed_image_s3_key": None,
+    "processed_image_url": None,
     "annotated_image": None,
     "agent_loop_time_s": 0.05,
     "iterations": 1,
