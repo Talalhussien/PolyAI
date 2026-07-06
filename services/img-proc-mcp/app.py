@@ -81,4 +81,4 @@ def add_noise(image_b64: str, amount: float = 0.05) -> str:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(mcp.sse_app(), host="0.0.0.0", port=8000)
+    uvicorn.run(mcp.streamable_http_app(), host="0.0.0.0", port=9000)

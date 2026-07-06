@@ -148,3 +148,19 @@ def test_add_noise_zero_amount():
     b64 = make_image()
     result = add_noise(b64, amount=0.0)
     assert _decode(result).size == _decode(b64).size
+
+
+# ── Invalid base64 input ──────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("fn,kwargs", [
+    (blur,      {"radius": 2.0}),
+    (rotate,    {"angle": 90.0}),
+    (flip,      {"direction": "horizontal"}),
+    (resize,    {"width": 50, "height": 50}),
+    (crop,      {"x1": 0, "y1": 0, "x2": 50, "y2": 50}),
+    (add_noise, {"amount": 0.1}),
+])
+def test_invalid_base64_raises(fn, kwargs):
+    """Every tool must raise when given a non-base64 string instead of an image."""
+    with pytest.raises(Exception):
+        fn("not-valid-base64!!!", **kwargs)
