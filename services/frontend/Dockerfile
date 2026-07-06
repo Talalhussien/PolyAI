@@ -9,6 +9,8 @@ RUN npm ci
 
 # Source code copied after dependencies are installed
 COPY . .
+ARG NEXT_PUBLIC_AGENT_URL=http://localhost:8000
+ENV NEXT_PUBLIC_AGENT_URL=$NEXT_PUBLIC_AGENT_URL
 RUN npm run build
 
 # ── Stage 2: runner ─────────────────────────────────────────────────────────
