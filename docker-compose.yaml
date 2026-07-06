@@ -29,7 +29,6 @@ services:
       - MCP_SERVER_URL=http://img-proc-mcp:9000
     volumes:
       - ~/.aws:/home/appuser/.aws:ro
-      - ./services/agent:/app
     networks:
       - polyai-net
 
