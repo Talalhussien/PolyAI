@@ -674,3 +674,156 @@ async def test_mcp_partial_failure_continues():
     # Second object succeeded → composite uploaded
     assert result["processed_image_s3_key"] is not None
     assert failing_then_ok.ainvoke.await_count == 2
+
+
+# ── Working image state ────────────────────────────────────────────────────────
+
+async def test_whole_image_tool_does_not_call_yolo():
+    """Whole-image blur (no label) must never call the YOLO HTTP service."""
+    fake_out = _png_b64(40, 40, "red")
+    s3       = _mock_s3(_jpeg_bytes(200, 200))
+    impls    = {"blur": _mcp_impl(fake_out)}
+
+    token = _current_image_s3_key.set("images/test.jpg")
+    try:
+        with patch("app.llm_with_tools") as m, \
+             patch("app._MCP_TOOLS_IMPL", impls), \
+             patch("app.s3_client", s3), \
+             patch("app.httpx") as mock_httpx:
+            m.ainvoke = AsyncMock(side_effect=[
+                _ai("", tool_calls=_tc("blur", {"radius": 3.0})),  # no label
+                _ai("Blurred."),
+            ])
+            result = await run_agent([HumanMessage(content="Blur the whole image")])
+    finally:
+        _current_image_s3_key.reset(token)
+
+    assert result["processed_image_s3_key"] is not None
+    mock_httpx.Client.assert_not_called()
+
+
+async def test_object_specific_then_whole_image_uses_processed_key():
+    """
+    After a label-specific tool updates _current_image_s3_key, a whole-image
+    tool in the same turn must fetch from that new processed key, not the original.
+    """
+    blur_out = _png_b64(40, 40, "blue")
+    flip_out = _png_b64(200, 200, "green")
+    regions  = _regions(count=1)
+    impls    = {"blur": _mcp_impl(blur_out), "flip": _mcp_impl(flip_out)}
+
+    get_object_keys: list = []
+
+    def tracking_get_object(**kw):
+        get_object_keys.append(kw["Key"])
+        return {"Body": io.BytesIO(_jpeg_bytes(200, 200))}
+
+    s3 = MagicMock()
+    s3.get_object.side_effect    = tracking_get_object
+    s3.put_object.return_value   = {}
+    s3.generate_presigned_url.return_value = "https://s3.example.com/fake"
+
+    token = _current_image_s3_key.set("images/test.jpg")
+    try:
+        with patch("app.llm_with_tools") as m, \
+             patch("app._get_all_regions", return_value=regions), \
+             patch("app._MCP_TOOLS_IMPL", impls), \
+             patch("app.s3_client", s3):
+            m.ainvoke = AsyncMock(side_effect=[
+                _ai("", tool_calls=(
+                    _tc("blur", {"radius": 3.0, "label": "car"}, "call_1") +
+                    _tc("flip", {"direction": "horizontal"},      "call_2")
+                )),
+                _ai("Done."),
+            ])
+            result = await run_agent([HumanMessage(content="Blur car then flip whole")])
+    finally:
+        _current_image_s3_key.reset(token)
+
+    assert result["processed_image_s3_key"] is not None
+    # The flip (whole-image) path must have called _fetch_full_image with the
+    # processed key — verify at least one get_object used a "processed/" key.
+    assert any("processed/" in k for k in get_object_keys), (
+        f"Expected flip to load from processed/ key. All get_object keys: {get_object_keys}"
+    )
+
+
+async def test_chains_two_label_tools_use_composite():
+    """
+    Two label-specific tools in the same turn (blur car, add_noise dog).
+    The second tool must crop from current_composite (no extra S3 load),
+    not re-download the original image.
+    """
+    blur_out  = _png_b64(40, 40, "blue")
+    noise_out = _png_b64(40, 40, "green")
+
+    car_regions = [{"bbox": [0,  10, 60,  60], "score": 0.9}]
+    dog_regions = [{"bbox": [100, 10, 160, 60], "score": 0.85}]
+
+    def fake_regions(s3_key, label, from_right=False):
+        return car_regions if label == "car" else dog_regions
+
+    impls = {
+        "blur":      _mcp_impl(blur_out),
+        "add_noise": _mcp_impl(noise_out),
+    }
+
+    load_count = {"n": 0}
+
+    def tracking_get_object(**kw):
+        load_count["n"] += 1
+        return {"Body": io.BytesIO(_jpeg_bytes(200, 200))}
+
+    s3 = MagicMock()
+    s3.get_object.side_effect    = tracking_get_object
+    s3.put_object.return_value   = {}
+    s3.generate_presigned_url.return_value = "https://s3.example.com/fake"
+
+    token = _current_image_s3_key.set("images/test.jpg")
+    try:
+        with patch("app.llm_with_tools") as m, \
+             patch("app._get_all_regions", side_effect=fake_regions), \
+             patch("app._MCP_TOOLS_IMPL", impls), \
+             patch("app.s3_client", s3):
+            m.ainvoke = AsyncMock(side_effect=[
+                _ai("", tool_calls=(
+                    _tc("blur",      {"radius": 3.0, "label": "car"}, "call_1") +
+                    _tc("add_noise", {"amount": 0.1, "label": "dog"}, "call_2")
+                )),
+                _ai("Done."),
+            ])
+            result = await run_agent([HumanMessage(content="Blur car and add noise to dog")])
+    finally:
+        _current_image_s3_key.reset(token)
+
+    assert result["processed_image_s3_key"] is not None
+    assert impls["blur"].ainvoke.await_count      == 1
+    assert impls["add_noise"].ainvoke.await_count == 1
+    # S3 must be loaded exactly once — second tool reused current_composite
+    assert load_count["n"] == 1, (
+        f"Expected S3 loaded once (composite reused for second tool), "
+        f"got {load_count['n']} loads"
+    )
+
+
+async def test_annotated_image_equals_processed_image_base64():
+    """annotated_image is a deprecated alias; it must always equal processed_image_base64."""
+    fake_out = _png_b64(40, 40, "blue")
+    s3       = _mock_s3(_jpeg_bytes(200, 200))
+    impls    = {"blur": _mcp_impl(fake_out)}
+
+    token = _current_image_s3_key.set("images/test.jpg")
+    try:
+        with patch("app.llm_with_tools") as m, \
+             patch("app._MCP_TOOLS_IMPL", impls), \
+             patch("app.s3_client", s3):
+            m.ainvoke = AsyncMock(side_effect=[
+                _ai("", tool_calls=_tc("blur", {"radius": 3.0})),
+                _ai("Done."),
+            ])
+            result = await run_agent([HumanMessage(content="Blur")])
+    finally:
+        _current_image_s3_key.reset(token)
+
+    assert result["annotated_image"] is not None
+    assert result["annotated_image"] == result["processed_image_base64"]

@@ -22,7 +22,7 @@ logging.getLogger("langchain").setLevel(logging.DEBUG)
 logging.getLogger("langchain_core").setLevel(logging.DEBUG)
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -735,9 +735,15 @@ async def chat(request: ChatRequest):
                 try:
                     image_bytes = base64.b64decode(msg.image_base64)
                 except Exception:
-                    raise ValueError("The uploaded image could not be decoded. Please send a valid base64-encoded image.")
-                img_info = PILImage.open(io.BytesIO(image_bytes))
-                img_w, img_h = img_info.size
+                    raise HTTPException(
+                        status_code=400,
+                        detail="The uploaded image could not be decoded. Please send a valid base64-encoded image.",
+                    )
+                try:
+                    _img = PILImage.open(io.BytesIO(image_bytes))
+                    size_hint = f" ({_img.width}x{_img.height} px)"
+                except Exception:
+                    size_hint = ""
                 image_s3_key = f"images/{uuid.uuid4()}/original.jpg"
                 s3_client.put_object(
                     Bucket=AWS_S3_BUCKET,
@@ -745,7 +751,7 @@ async def chat(request: ChatRequest):
                     Body=image_bytes,
                     ContentType="image/jpeg",
                 )
-                content = msg.content + f"\n[An image was uploaded ({img_w}x{img_h} px). Use existing tools to analyze it according to user instructions.]"
+                content = msg.content + f"\n[An image was uploaded{size_hint}. Use existing tools to analyze it according to user instructions.]"
             else:
                 content = msg.content
             lc_messages.append(HumanMessage(content=content))
