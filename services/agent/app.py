@@ -28,7 +28,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.rate_limiters import InMemoryRateLimiter
 from langchain_core.tools import tool, StructuredTool
-from PIL import Image as PILImage, ImageDraw
+from PIL import Image as PILImage, ImageDraw, ImageOps
 from pydantic import BaseModel, Field
 
 YOLO_SERVICE_URL  = os.environ.get("YOLO_SERVICE_URL", "http://localhost:8080")
@@ -102,8 +102,6 @@ SYSTEM_PROMPT = (
 s3_client = boto3.client("s3", region_name=AWS_REGION)
 
 _current_image_s3_key: ContextVar[Optional[str]] = ContextVar("current_image_s3_key", default=None)
-# Caches the last YOLO detection result within a single request so _get_all_regions
-# reuses the same prediction instead of triggering a second (potentially different) run.
 _yolo_cache: ContextVar[Optional[dict]] = ContextVar("yolo_cache", default=None)
 
 TOOLS: dict = {}
@@ -138,7 +136,7 @@ TOOLS = {detect_objects.name: detect_objects}
 def _fetch_full_image(s3_key: str) -> str:
     """Fetch image from S3, compress to ≤512 px, return base64 JPEG."""
     obj = s3_client.get_object(Bucket=AWS_S3_BUCKET, Key=s3_key)
-    img = PILImage.open(io.BytesIO(obj["Body"].read())).convert("RGB")
+    img = ImageOps.exif_transpose(PILImage.open(io.BytesIO(obj["Body"].read()))).convert("RGB")
     img.thumbnail((512, 512), PILImage.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=60)
@@ -148,15 +146,14 @@ def _fetch_full_image(s3_key: str) -> str:
 def _get_all_regions(s3_key: str, label: str, from_right: bool = False) -> list[dict]:
     """
     Return all valid bounding boxes for *label*, sorted left-to-right by x1
-    (reversed when from_right=True).  Reuses a cached YOLO prediction from
-    the same request when available; otherwise runs a fresh two-step YOLO call.
+    (reversed when from_right=True).
     Each entry: {"bbox": [x1,y1,x2,y2], "score": float}
     Malformed boxes are silently skipped.
     """
     cache = _yolo_cache.get()
     if cache and cache.get("s3_key") == s3_key:
         prediction = cache["prediction"]
-        logging.info("_get_all_regions: reusing cached YOLO prediction")
+        logging.info(f"_get_all_regions: reusing cached YOLO prediction, label='{label}'")
     else:
         with httpx.Client(timeout=30.0) as client:
             resp = client.post(f"{YOLO_SERVICE_URL}/predict", json={"image_s3_key": s3_key})
@@ -166,6 +163,7 @@ def _get_all_regions(s3_key: str, label: str, from_right: bool = False) -> list[
             det.raise_for_status()
         prediction = det.json()
         _yolo_cache.set({"s3_key": s3_key, "prediction": prediction})
+        logging.info(f"_get_all_regions: YOLO call complete, uid={uid}, label='{label}'")
 
     regions = []
     for obj in prediction.get("detection_objects", []):
@@ -421,6 +419,11 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
             for tc in response.tool_calls
         )
 
+        # Accumulates edits across multiple tool calls in the same turn.
+        # Each object-specific tool pastes onto this instead of the original S3 image,
+        # so effects from previous tools in the same turn are preserved.
+        current_composite: Optional[PILImage.Image] = None
+
         for tool_call in response.tool_calls:
             tool_name = tool_call["name"]
             tools_called.append(tool_name)
@@ -472,7 +475,9 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
                     if _is_base64_image(result_text):
                         annotated_image              = result_text
                         processed_s3_key, processed_url = _upload_image(annotated_image)
+                        _current_image_s3_key.set(processed_s3_key)
                         _processing_tool_ran         = True
+                        logging.info(f"Updated current image to processed result: {processed_s3_key}")
                         messages.append(ToolMessage(content="Image processed successfully.", tool_call_id=tool_id))
                     else:
                         messages.append(ToolMessage(content=result_text, tool_call_id=tool_id))
@@ -519,8 +524,11 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
                 if tool_name == "crop":
                     region        = regions[selected[0]]
                     x1, y1, x2, y2 = region["bbox"]
-                    s3_obj = s3_client.get_object(Bucket=AWS_S3_BUCKET, Key=s3_key)
-                    orig   = PILImage.open(io.BytesIO(s3_obj["Body"].read())).convert("RGB")
+                    if current_composite is not None:
+                        orig = current_composite.copy()
+                    else:
+                        s3_obj = s3_client.get_object(Bucket=AWS_S3_BUCKET, Key=s3_key)
+                        orig   = ImageOps.exif_transpose(PILImage.open(io.BytesIO(s3_obj["Body"].read()))).convert("RGB")
                     crop_pil = orig.crop((x1, y1, x2, y2))
                     buf = io.BytesIO()
                     crop_pil.save(buf, format="JPEG", quality=75)
@@ -534,8 +542,12 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
                     continue
 
                 # ── All other tools: crop → MCP → composite ───────────────────
-                s3_obj = s3_client.get_object(Bucket=AWS_S3_BUCKET, Key=s3_key)
-                orig   = PILImage.open(io.BytesIO(s3_obj["Body"].read())).convert("RGB")
+                if current_composite is not None:
+                    orig = current_composite.copy()
+                    logging.info("Using previous tool composite as base")
+                else:
+                    s3_obj = s3_client.get_object(Bucket=AWS_S3_BUCKET, Key=s3_key)
+                    orig   = PILImage.open(io.BytesIO(s3_obj["Body"].read())).convert("RGB")
 
                 processed_count = 0
                 errors: list[str] = []
@@ -624,11 +636,13 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
                     ))
                     continue
 
+                current_composite = orig.copy()  # full-res base for next tool in this turn
                 orig.thumbnail((768, 768), PILImage.LANCZOS)
                 buf = io.BytesIO()
                 orig.save(buf, format="JPEG", quality=70)
                 annotated_image              = base64.b64encode(buf.getvalue()).decode()
                 processed_s3_key, processed_url = _upload_image(annotated_image)
+                _current_image_s3_key.set(processed_s3_key)
                 _processing_tool_ran         = True
 
                 confirm = f"Processed {processed_count}/{len(selected)} {label}(s) successfully."
@@ -654,10 +668,6 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
                     result_data = json.loads(content_text)
                     if "prediction_uid" in result_data:
                         prediction_id = result_data["prediction_uid"]
-                    # Cache the prediction in the main async context so that
-                    # _get_all_regions can reuse it without a second YOLO call.
-                    # Must be done here (not inside the @tool thread) because
-                    # ContextVar writes from run_in_executor threads don't propagate.
                     s3_key_now = _current_image_s3_key.get()
                     if s3_key_now and "detection_objects" in result_data:
                         _yolo_cache.set({"s3_key": s3_key_now, "prediction": result_data})
@@ -722,7 +732,12 @@ async def chat(request: ChatRequest):
     for msg in request.messages:
         if msg.role == "user":
             if msg.image_base64:
-                image_bytes  = base64.b64decode(msg.image_base64)
+                try:
+                    image_bytes = base64.b64decode(msg.image_base64)
+                except Exception:
+                    raise ValueError("The uploaded image could not be decoded. Please send a valid base64-encoded image.")
+                img_info = PILImage.open(io.BytesIO(image_bytes))
+                img_w, img_h = img_info.size
                 image_s3_key = f"images/{uuid.uuid4()}/original.jpg"
                 s3_client.put_object(
                     Bucket=AWS_S3_BUCKET,
@@ -730,7 +745,7 @@ async def chat(request: ChatRequest):
                     Body=image_bytes,
                     ContentType="image/jpeg",
                 )
-                content = msg.content + "\n[An image was uploaded. Use existing tools to analyze it according to user instructions.]"
+                content = msg.content + f"\n[An image was uploaded ({img_w}x{img_h} px). Use existing tools to analyze it according to user instructions.]"
             else:
                 content = msg.content
             lc_messages.append(HumanMessage(content=content))

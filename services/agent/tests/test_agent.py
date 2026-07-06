@@ -603,20 +603,17 @@ async def test_yolo_failure_handled_gracefully():
 
 async def test_yolo_cache_reused_within_request():
     """
-    detect_objects populates _yolo_cache; a subsequent processing tool call
-    must reuse the cached prediction and NOT call YOLO a second time.
-    This is the fix for low-confidence objects (e.g. Car 4 @ 0.53) being
-    missed because a fresh YOLO call returns slightly different results.
+    detect_objects populates _yolo_cache; a subsequent label-specific processing
+    tool must reuse the cached prediction and NOT call YOLO a second time.
     """
     fake_out = _png_b64(40, 40, "green")
     s3       = _mock_s3(_jpeg_bytes(200, 200))
     impls    = {"blur": _mcp_impl(fake_out)}
 
-    # Seed the cache as detect_objects would (3 objects)
     cached_prediction = {
         "detection_objects": [
             {"label": "car", "score": 0.91, "box": "[10, 10, 60, 60]"},
-            {"label": "car", "score": 0.53, "box": "[70, 10, 120, 60]"},   # low-conf object
+            {"label": "car", "score": 0.53, "box": "[70, 10, 120, 60]"},
             {"label": "car", "score": 0.67, "box": "[130, 10, 180, 60]"},
         ]
     }
@@ -627,7 +624,7 @@ async def test_yolo_cache_reused_within_request():
         with patch("app.llm_with_tools") as m, \
              patch("app._MCP_TOOLS_IMPL", impls), \
              patch("app.s3_client", s3), \
-             patch("app.httpx") as mock_httpx:   # httpx must NOT be called (no YOLO request)
+             patch("app.httpx") as mock_httpx:
             m.ainvoke = AsyncMock(side_effect=[
                 _ai("", tool_calls=_tc("blur", {"radius": 3.0, "label": "car", "all_objects": True})),
                 _ai("All cars blurred."),
@@ -637,10 +634,8 @@ async def test_yolo_cache_reused_within_request():
         _current_image_s3_key.reset(token_key)
         _yolo_cache.reset(token_cache)
 
-    # All 3 objects (including the low-confidence one) must be processed
     assert impls["blur"].ainvoke.await_count == 3
     assert result["processed_image_s3_key"] is not None
-    # httpx.Client was never instantiated — cache was used
     mock_httpx.Client.assert_not_called()
 
 
