@@ -16,3 +16,8 @@ scrape_configs:
     static_configs:
       - targets: ['agent:8000']
     metrics_path: /metrics
+
+  - job_name: yolo
+    static_configs:
+      - targets: ['yolo:8080']
+    metrics_path: /metrics
