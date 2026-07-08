@@ -67,6 +67,9 @@ SYSTEM_PROMPT = (
     "     rotate(angle=90)               ← rotate whole image\n"
     "     blur(radius=3)                 ← blur whole image\n"
     "     flip(direction='horizontal')   ← flip whole image\n"
+    "     crop(x1=0, y1=0, x2=50, y2=100)  ← crop left half  (coordinates are PERCENTAGES 0-100)\n"
+    "     crop(x1=50, y1=0, x2=100, y2=100) ← crop right half\n"
+    "     crop(x1=0, y1=0, x2=100, y2=50)  ← crop top half\n"
     "\n"
     "3. To process SPECIFIC OBJECT(S): call the tool WITH label='<class>'.\n"
     "\n"
@@ -228,10 +231,10 @@ class _ResizeInput(_ImgBase):
     height: int = Field(256, description="Target height in pixels")
 
 class _CropInput(_ImgBase):
-    x1: int = Field(0,   description="Left boundary (used only for whole-image crop; ignored when label is set)")
-    y1: int = Field(0,   description="Top boundary (used only for whole-image crop; ignored when label is set)")
-    x2: int = Field(100, description="Right boundary (used only for whole-image crop; ignored when label is set)")
-    y2: int = Field(100, description="Bottom boundary (used only for whole-image crop; ignored when label is set)")
+    x1: int = Field(0,   description="Left boundary as % of image width (0-100). e.g. left half → x1=0, x2=50")
+    y1: int = Field(0,   description="Top boundary as % of image height (0-100). e.g. top half → y1=0, y2=50")
+    x2: int = Field(100, description="Right boundary as % of image width (0-100). e.g. right half → x1=50, x2=100")
+    y2: int = Field(100, description="Bottom boundary as % of image height (0-100). e.g. bottom half → y1=50, y2=100")
 
 class _AddNoiseInput(_ImgBase):
     amount: float = Field(0.05, description="Fraction of pixels to corrupt (0.0–1.0)")
@@ -363,6 +366,12 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
     total_tokens          = 0
     start                 = time.time()
 
+    def _clean(text: str) -> str:
+        import re
+        text = re.sub(r"<thinking>.*?</thinking>", "", text, flags=re.DOTALL)
+        text = re.sub(r"<response>(.*?)</response>", r"\1", text, flags=re.DOTALL)
+        return text.strip()
+
     def _ret(content: str) -> dict:
         return {
             "response":               content,
@@ -396,6 +405,7 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
             content = response.content
             if isinstance(content, list):
                 content = "".join(b["text"] for b in content if b.get("type") == "text")
+            content = _clean(content)
             break
 
         response: AIMessage = await llm_with_tools.ainvoke(messages)
@@ -410,7 +420,7 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
             content = response.content
             if isinstance(content, list):
                 content = "".join(b["text"] for b in content if b.get("type") == "text")
-            return _ret(content)
+            return _ret(_clean(content))
 
         # If any MCP tool in this turn operates on the whole image (no label),
         # detect_objects is pointless — the whole-image path never uses YOLO.
@@ -423,6 +433,10 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
         # Each object-specific tool pastes onto this instead of the original S3 image,
         # so effects from previous tools in the same turn are preserved.
         current_composite: Optional[PILImage.Image] = None
+
+        # Capture original key once — YOLO detection always runs on the original
+        # image so bounding boxes stay consistent even after the first tool edits it.
+        turn_s3_key = _current_image_s3_key.get()
 
         for tool_call in response.tool_calls:
             tool_name = tool_call["name"]
@@ -466,6 +480,13 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
                 # ── Whole-image path ──────────────────────────────────────────
                 if not label:
                     img_b64 = _fetch_full_image(s3_key)
+                    if tool_name == "crop":
+                        _pil = PILImage.open(io.BytesIO(base64.b64decode(img_b64)))
+                        _w, _h = _pil.size
+                        args["x1"] = int(args.get("x1", 0)   * _w / 100)
+                        args["y1"] = int(args.get("y1", 0)   * _h / 100)
+                        args["x2"] = int(args.get("x2", 100) * _w / 100)
+                        args["y2"] = int(args.get("y2", 100) * _h / 100)
                     args["image_b64"] = img_b64
                     mcp_result  = await real_tool.ainvoke(
                         {"name": tool_name, "args": args, "id": tool_id, "type": "tool_call"}
@@ -476,6 +497,7 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
                         annotated_image              = result_text
                         processed_s3_key, processed_url = _upload_image(annotated_image)
                         _current_image_s3_key.set(processed_s3_key)
+                        turn_s3_key = processed_s3_key  # subsequent object tools detect on this transformed image
                         _processing_tool_ran         = True
                         logging.info(f"Updated current image to processed result: {processed_s3_key}")
                         messages.append(ToolMessage(content="Image processed successfully.", tool_call_id=tool_id))
@@ -485,7 +507,7 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
 
                 # ── Object-specific path ──────────────────────────────────────
                 try:
-                    regions = _get_all_regions(s3_key, label, from_right)
+                    regions = _get_all_regions(turn_s3_key, label, from_right)
                 except Exception as exc:
                     messages.append(ToolMessage(
                         content=f"YOLO detection failed: {exc}",
