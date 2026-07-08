@@ -1,46 +1,70 @@
 services:
   yolo:
-    image: talalhussien/yolo-service:0.0.1
+    image: talalhussien/yolo-service:${YOLO_TAG:-0.0.1}
+    container_name: polyai-yolo
+    restart: unless-stopped
     ports:
       - "8080:8080"
-    env_file:
-      - services/yolo/.env
+    environment:
+      - CONFIDENCE_THRESHOLD=${CONFIDENCE_THRESHOLD:-0.5}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
     volumes:
-      - ~/.aws:/home/appuser/.aws:ro
       - ./services/yolo/yolov8n.pt:/app/yolov8n.pt:ro
+      - ~/.aws:/home/appuser/.aws:ro
     networks:
       - polyai-net
 
   img-proc-mcp:
-    image: talalhussien/img-proc-mcp:0.0.1
+    image: talalhussien/img-proc-mcp:${MCP_TAG:-0.0.1}
+    container_name: polyai-img-proc-mcp
+    restart: unless-stopped
     ports:
       - "9000:9000"
     networks:
       - polyai-net
 
   agent:
-    image: talalhussien/agent-service:0.0.1
+    image: talalhussien/agent-service:${AGENT_TAG:-0.0.1}
+    container_name: polyai-agent
+    restart: unless-stopped
     ports:
       - "8000:8000"
-    env_file:
-      - services/agent/.env
     environment:
       - YOLO_SERVICE_URL=http://yolo:8080
       - MCP_SERVER_URL=http://img-proc-mcp:9000
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - MODEL=${MODEL}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
     volumes:
       - ~/.aws:/home/appuser/.aws:ro
+    depends_on:
+      - yolo
+      - img-proc-mcp
     networks:
       - polyai-net
 
   frontend:
-    image: talalhussien/frontend-service:0.0.1
+    image: talalhussien/frontend-service:${FRONTEND_TAG:-0.0.1}
+    container_name: polyai-frontend
+    restart: unless-stopped
     ports:
       - "3000:3000"
+    depends_on:
+      - agent
     networks:
       - polyai-net
 
   node-exporter:
-    image: quay.io/prometheus/node-exporter:latest
+    image: prom/node-exporter
+    container_name: polyai-node-exporter
     command:
       - '--path.rootfs=/host'
     network_mode: host
@@ -51,6 +75,8 @@ services:
 
   prometheus:
     image: prom/prometheus
+    container_name: polyai-prometheus
+    restart: unless-stopped
     ports:
       - "9090:9090"
     extra_hosts:
@@ -58,19 +84,25 @@ services:
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
+    depends_on:
+      - node-exporter
     networks:
       - polyai-net
       - monitoring-net
 
   grafana:
     image: grafana/grafana
+    container_name: polyai-grafana
+    restart: unless-stopped
     ports:
       - "3001:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
     networks:
       - monitoring-net
 
