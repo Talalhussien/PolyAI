@@ -5,12 +5,14 @@ import json
 import os
 import random
 import uuid
+from typing import Annotated
 
 import boto3
 import httpx
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
+from pydantic import Field
 
 load_dotenv()
 
@@ -265,17 +267,17 @@ def resize(
 @mcp.tool()
 def crop(
     image_s3_key: str,
-    x1: int = 0,
-    y1: int = 0,
-    x2: int = 100,
-    y2: int = 100,
+    x1: Annotated[int, Field(description="Left boundary as percentage of image width (0-100). Example: 25 means 25% from the left.")] = 0,
+    y1: Annotated[int, Field(description="Top boundary as percentage of image height (0-100). Example: 0 means top edge.")] = 0,
+    x2: Annotated[int, Field(description="Right boundary as percentage of image width (0-100). Example: 75 means 75% from the left.")] = 100,
+    y2: Annotated[int, Field(description="Bottom boundary as percentage of image height (0-100). Example: 100 means bottom edge.")] = 100,
     label: str | None = None,
     indices: list[int] | None = None,
     from_right: bool = False,
     detection_s3_key: str | None = None,
 ) -> str:
     """
-    Without label: crop full image using percentages (0-100).
+    Without label: crop full image using percentages (0-100). x1/y1/x2/y2 are percentages NOT pixels.
     With label: extract the detected object bounding box.
     """
     try:
