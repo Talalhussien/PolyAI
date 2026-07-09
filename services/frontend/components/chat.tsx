@@ -60,13 +60,14 @@ export default function Chat() {
     setLoading(true);
 
     try {
-      const { response, annotated_image } = await sendMessage(next);
+      const { response, annotated_image, processed_image_s3_key } = await sendMessage(next);
       setMessages([
         ...next,
         {
           role: "assistant",
           content: response,
-          ...(annotated_image ? { annotated_image } : {}),
+          ...(annotated_image         ? { annotated_image }         : {}),
+          ...(processed_image_s3_key  ? { processed_image_s3_key }  : {}),
         },
       ]);
     } catch (err) {
