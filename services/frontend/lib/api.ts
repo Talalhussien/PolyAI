@@ -4,7 +4,7 @@ const AGENT_URL = process.env.NEXT_PUBLIC_AGENT_URL ?? "http://localhost:8000";
 
 export async function sendMessage(
   messages: ChatMessage[]
-): Promise<{ response: string; annotated_image: string | null }> {
+): Promise<{ response: string; annotated_image: string | null; processed_image_s3_key: string | null }> {
   const res = await fetch(`${AGENT_URL}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -18,5 +18,6 @@ export async function sendMessage(
   return {
     response: data.response as string,
     annotated_image: data.annotated_image ?? null,
+    processed_image_s3_key: data.processed_image_s3_key ?? null,
   };
 }

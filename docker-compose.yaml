@@ -23,6 +23,16 @@ services:
     restart: unless-stopped
     ports:
       - "9000:9000"
+    environment:
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - YOLO_SERVICE_URL=http://yolo:8080
+    volumes:
+      - ~/.aws:/home/appuser/.aws:ro
+    depends_on:
+      - yolo
     networks:
       - polyai-net
 
