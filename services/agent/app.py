@@ -280,7 +280,15 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
             content = _clean(content)
             break
 
-        response: AIMessage = await llm_with_tools.ainvoke(messages)
+        try:
+            response: AIMessage = await llm_with_tools.ainvoke(messages)
+        except Exception as e:
+            err_str = str(e)
+            if "ModelErrorException" in err_str or "invalid sequence" in err_str.lower():
+                logging.warning(f"Bedrock model error (retrying once): {e}")
+                response = await llm_with_tools.ainvoke(messages)
+            else:
+                raise
         if response.usage_metadata:
             total_input_tokens  += response.usage_metadata.get("input_tokens", 0)
             total_output_tokens += response.usage_metadata.get("output_tokens", 0)
