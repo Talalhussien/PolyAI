@@ -132,7 +132,10 @@ def blur(
     if not label:
         return _result(img.filter(ImageFilter.GaussianBlur(radius)))
 
-    regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+    try:
+        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+    except Exception as e:
+        return json.dumps({"error": f"Detection failed: {e}"})
     if not regions:
         return json.dumps({"error": f"No '{label}' found in image"})
 
@@ -163,7 +166,10 @@ def rotate(
     if not label:
         return _result(img.rotate(angle, expand=True))
 
-    regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+    try:
+        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+    except Exception as e:
+        return json.dumps({"error": f"Detection failed: {e}"})
     if not regions:
         return json.dumps({"error": f"No '{label}' found in image"})
 
@@ -199,7 +205,10 @@ def flip(
     if not label:
         return _result(img.transpose(op))
 
-    regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+    try:
+        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+    except Exception as e:
+        return json.dumps({"error": f"Detection failed: {e}"})
     if not regions:
         return json.dumps({"error": f"No '{label}' found in image"})
 
@@ -234,7 +243,10 @@ def resize(
     if not label:
         return _result(img.resize((width, height), Image.LANCZOS))
 
-    regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+    try:
+        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+    except Exception as e:
+        return json.dumps({"error": f"Detection failed: {e}"})
     if not regions:
         return json.dumps({"error": f"No '{label}' found in image"})
 
@@ -296,7 +308,10 @@ def crop(
             return json.dumps({"error": f"Invalid crop percentages ({x1},{y1},{x2},{y2})"})
         return _result(img.crop((px1, py1, px2, py2)))
 
-    regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+    try:
+        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+    except Exception as e:
+        return json.dumps({"error": f"Detection failed: {e}"})
     if not regions:
         return json.dumps({"error": f"No '{label}' found in image"})
 
@@ -336,7 +351,10 @@ def add_noise(
     if not label:
         return _result(_apply(img))
 
-    regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+    try:
+        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+    except Exception as e:
+        return json.dumps({"error": f"Detection failed: {e}"})
     if not regions:
         return json.dumps({"error": f"No '{label}' found in image"})
 

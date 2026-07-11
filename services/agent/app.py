@@ -41,20 +41,6 @@ for _var in ("AWS_REGION", "AWS_S3_BUCKET"):
         raise SystemExit(f"\n[ERROR] Required environment variable '{_var}' is not set.\n"
                          "Add it to your .env file.\n")
 
-ALLOWED_MODELS = {
-    "openai:gpt-5.4-mini",
-    "anthropic:claude-haiku-4-5",
-    "google_genai:gemini-2.5-flash",
-    "bedrock_converse/anthropic.claude-3-5-haiku-20241022-v1:0",
-    "bedrock_converse/amazon.nova-lite-v1:0",
-}
-
-if MODEL not in ALLOWED_MODELS:
-    allowed_list = "\n  ".join(sorted(ALLOWED_MODELS))
-    raise SystemExit(
-        f"\n[ERROR] MODEL='{MODEL}' is not allowed.\n"
-        f"Set MODEL in your .env to one of the supported text-only models:\n  {allowed_list}\n"
-    )
 
 SYSTEM_PROMPT = (
     "You are an AI vision assistant. Follow these rules exactly:\n"
@@ -341,6 +327,13 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
                 )
                 result_text = _tool_content_text(mcp_result.content)
 
+                if getattr(mcp_result, "status", None) == "error":
+                    messages.append(ToolMessage(
+                        content=result_text or f"Tool '{tool_name}' failed.",
+                        tool_call_id=tool_id,
+                    ))
+                    continue
+
                 try:
                     result_data = json.loads(result_text)
                 except (json.JSONDecodeError, TypeError):
@@ -359,6 +352,12 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
                     annotated_image  = result_data.get("processed_image_base64")
                     _current_image_s3_key.set(processed_s3_key)
                     _processing_tool_ran = True
+                    if not args.get("label"):
+                        # Whole-image edit (crop/resize/rotate) changes the canvas
+                        # itself — later object-targeting calls this turn must detect
+                        # against the new canvas, or bbox coordinates from the old
+                        # canvas won't line up with the actual pixels anymore.
+                        turn_detection_s3_key = processed_s3_key
                     logging.info(f"Updated current image to: {processed_s3_key}")
 
                 messages.append(ToolMessage(
