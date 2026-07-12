@@ -297,7 +297,7 @@ def test_from_right_passes_flag_to_get_regions():
     with _mock_fetch(img), _mock_upload(), \
          patch("app._get_regions", return_value=regions) as mock_gr:
         _parse(blur("images/test.jpg", radius=2.0, label="car", indices=[0], from_right=True))
-    mock_gr.assert_called_once_with("images/test.jpg", "car", True)
+    mock_gr.assert_called_once_with("images/test.jpg", "car", True, None)
 
 
 # ── Result format ─────────────────────────────────────────────────────────────

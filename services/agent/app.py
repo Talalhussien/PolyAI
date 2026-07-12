@@ -91,6 +91,7 @@ SYSTEM_PROMPT = (
 s3_client = boto3.client("s3", region_name=AWS_REGION)
 
 _current_image_s3_key: ContextVar[Optional[str]] = ContextVar("current_image_s3_key", default=None)
+_current_chat_session_id: ContextVar[Optional[str]] = ContextVar("current_chat_session_id", default=None)
 
 TOOLS: dict = {}
 
@@ -107,7 +108,7 @@ def detect_objects() -> str:
     with httpx.Client(timeout=30.0) as client:
         resp = client.post(
             f"{YOLO_SERVICE_URL}/predict",
-            json={"image_s3_key": s3_key},
+            json={"image_s3_key": s3_key, "chat_session_id": _current_chat_session_id.get()},
         )
         resp.raise_for_status()
         uid = resp.json()["prediction_uid"]
@@ -179,6 +180,7 @@ class TokensUsed(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
+    chat_session_id: str
     prediction_id: Optional[str] = None
     processed_image_base64: Optional[str] = None
     processed_image_s3_key: Optional[str] = None
@@ -223,6 +225,7 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
     total_output_tokens   = 0
     total_tokens          = 0
     start                 = time.time()
+    _no_tool_call_retried = False
 
     def _clean(text: str) -> str:
         import re
@@ -233,6 +236,7 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
     def _ret(content: str) -> dict:
         return {
             "response":               content,
+            "chat_session_id":        _current_chat_session_id.get(),
             "prediction_id":          prediction_id,
             "processed_image_base64": annotated_image,
             "processed_image_s3_key": processed_s3_key,
@@ -283,6 +287,24 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
         iterations += 1
 
         if not response.tool_calls:
+            # A model sometimes acknowledges an image-editing request in plain
+            # text instead of actually calling a tool. Only worth nudging on the
+            # very first decision of the turn (iterations == 1) — if the model
+            # legitimately finished a multi-step sequence and has nothing left
+            # to do, that's a normal exit, not a skipped tool call.
+            if (
+                not _no_tool_call_retried
+                and iterations == 1
+                and _current_image_s3_key.get()
+            ):
+                _no_tool_call_retried = True
+                messages.append(HumanMessage(
+                    content="You have an active image. If the user's message describes "
+                            "an image edit or analysis, call the appropriate tool now "
+                            "instead of just replying in text."
+                ))
+                continue
+
             content = response.content
             if isinstance(content, list):
                 content = "".join(b["text"] for b in content if b.get("type") == "text")
@@ -321,6 +343,7 @@ async def run_agent(history: list, max_iterations: int = 10) -> dict:
                 args = dict(tool_call.get("args", {}))
                 args["image_s3_key"]       = s3_key               # current (possibly edited) image
                 args["detection_s3_key"]   = turn_detection_s3_key  # original image for YOLO
+                args["chat_session_id"]    = _current_chat_session_id.get()
 
                 mcp_result  = await real_tool.ainvoke(
                     {"name": tool_name, "args": args, "id": tool_id, "type": "tool_call"}
@@ -432,12 +455,14 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
+    chat_session_id: Optional[str] = None
 
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    lc_messages  = []
-    image_s3_key = None
+    lc_messages     = []
+    image_s3_key    = None
+    chat_session_id = request.chat_session_id or str(uuid.uuid4())
 
     for msg in request.messages:
         if msg.role == "user":
@@ -454,7 +479,7 @@ async def chat(request: ChatRequest):
                     size_hint = f" ({_img.width}x{_img.height} px)"
                 except Exception:
                     size_hint = ""
-                image_s3_key = f"images/{uuid.uuid4()}/original.jpg"
+                image_s3_key = f"chats/{chat_session_id}/original/{uuid.uuid4()}.jpg"
                 s3_client.put_object(
                     Bucket=AWS_S3_BUCKET,
                     Key=image_s3_key,
@@ -472,11 +497,13 @@ async def chat(request: ChatRequest):
                 image_s3_key = msg.processed_image_s3_key
             lc_messages.append(AIMessage(content=msg.content))
 
-    token = _current_image_s3_key.set(image_s3_key)
+    image_token   = _current_image_s3_key.set(image_s3_key)
+    session_token = _current_chat_session_id.set(chat_session_id)
     try:
         return ChatResponse(**await run_agent(lc_messages))
     finally:
-        _current_image_s3_key.reset(token)
+        _current_image_s3_key.reset(image_token)
+        _current_chat_session_id.reset(session_token)
 
 
 @app.get("/health")

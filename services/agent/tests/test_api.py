@@ -28,6 +28,7 @@ def _valid_jpeg_b64() -> str:
 
 FAKE_AGENT_RESPONSE = {
     "response": "I see 2 people.",
+    "chat_session_id": "fake-session-id",
     "prediction_id": None,
     "processed_image_base64": None,
     "processed_image_s3_key": None,

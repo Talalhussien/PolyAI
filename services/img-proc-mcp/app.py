@@ -34,8 +34,11 @@ def _fetch_from_s3(s3_key: str) -> Image.Image:
     ).convert("RGB")
 
 
-def _upload_to_s3(img: Image.Image) -> tuple[str, str]:
-    key = f"processed/{uuid.uuid4()}/result.jpg"
+def _upload_to_s3(img: Image.Image, chat_session_id: str | None = None, tool_name: str = "result") -> tuple[str, str]:
+    if chat_session_id:
+        key = f"chats/{chat_session_id}/processed/{tool_name}-{uuid.uuid4().hex[:8]}.jpg"
+    else:
+        key = f"processed/{uuid.uuid4()}/result.jpg"
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)
     s3_client.put_object(
@@ -55,9 +58,9 @@ def _upload_to_s3(img: Image.Image) -> tuple[str, str]:
     return key, url
 
 
-def _result(img: Image.Image) -> str:
+def _result(img: Image.Image, chat_session_id: str | None = None, tool_name: str = "result") -> str:
     """Upload to S3 and return JSON string with key, url, and base64 thumbnail."""
-    key, url = _upload_to_s3(img)
+    key, url = _upload_to_s3(img, chat_session_id, tool_name)
     thumb = img.copy()
     thumb.thumbnail((768, 768), Image.LANCZOS)
     buf = io.BytesIO()
@@ -71,10 +74,13 @@ def _result(img: Image.Image) -> str:
 
 # ── YOLO helpers ──────────────────────────────────────────────────────────────
 
-def _get_regions(s3_key: str, label: str, from_right: bool = False) -> list[dict]:
+def _get_regions(s3_key: str, label: str, from_right: bool = False, chat_session_id: str | None = None) -> list[dict]:
     """Call YOLO, filter by label, sort left-to-right (reversed when from_right=True)."""
     with httpx.Client(timeout=30.0) as client:
-        resp = client.post(f"{YOLO_SERVICE_URL}/predict", json={"image_s3_key": s3_key})
+        resp = client.post(
+            f"{YOLO_SERVICE_URL}/predict",
+            json={"image_s3_key": s3_key, "chat_session_id": chat_session_id},
+        )
         resp.raise_for_status()
         uid = resp.json()["prediction_uid"]
         det = client.get(f"{YOLO_SERVICE_URL}/prediction/{uid}")
@@ -122,6 +128,7 @@ def blur(
     all_objects: bool = False,
     from_right: bool = False,
     detection_s3_key: str | None = None,
+    chat_session_id: str | None = None,
 ) -> str:
     """Apply Gaussian blur to the whole image or to specific detected objects."""
     try:
@@ -130,10 +137,10 @@ def blur(
         return json.dumps({"error": f"Failed to load image: {e}"})
 
     if not label:
-        return _result(img.filter(ImageFilter.GaussianBlur(radius)))
+        return _result(img.filter(ImageFilter.GaussianBlur(radius)), chat_session_id, "blur")
 
     try:
-        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right, chat_session_id)
     except Exception as e:
         return json.dumps({"error": f"Detection failed: {e}"})
     if not regions:
@@ -144,7 +151,7 @@ def blur(
         x1, y1, x2, y2 = regions[idx]["bbox"]
         patch = img.crop((x1, y1, x2, y2)).filter(ImageFilter.GaussianBlur(radius))
         out.paste(patch.resize((x2 - x1, y2 - y1), Image.LANCZOS), (x1, y1))
-    return _result(out)
+    return _result(out, chat_session_id, "blur")
 
 
 @mcp.tool()
@@ -156,6 +163,7 @@ def rotate(
     all_objects: bool = False,
     from_right: bool = False,
     detection_s3_key: str | None = None,
+    chat_session_id: str | None = None,
 ) -> str:
     """Rotate the whole image or specific detected objects counter-clockwise."""
     try:
@@ -164,10 +172,10 @@ def rotate(
         return json.dumps({"error": f"Failed to load image: {e}"})
 
     if not label:
-        return _result(img.rotate(angle, expand=True))
+        return _result(img.rotate(angle, expand=True), chat_session_id, "rotate")
 
     try:
-        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right, chat_session_id)
     except Exception as e:
         return json.dumps({"error": f"Detection failed: {e}"})
     if not regions:
@@ -178,7 +186,7 @@ def rotate(
         x1, y1, x2, y2 = regions[idx]["bbox"]
         patch = img.crop((x1, y1, x2, y2)).rotate(angle, expand=False)
         out.paste(patch.resize((x2 - x1, y2 - y1), Image.LANCZOS), (x1, y1))
-    return _result(out)
+    return _result(out, chat_session_id, "rotate")
 
 
 @mcp.tool()
@@ -190,6 +198,7 @@ def flip(
     all_objects: bool = False,
     from_right: bool = False,
     detection_s3_key: str | None = None,
+    chat_session_id: str | None = None,
 ) -> str:
     """Flip the whole image or specific detected objects horizontally or vertically."""
     if direction not in ("horizontal", "vertical"):
@@ -203,10 +212,10 @@ def flip(
     op = Image.FLIP_LEFT_RIGHT if direction == "horizontal" else Image.FLIP_TOP_BOTTOM
 
     if not label:
-        return _result(img.transpose(op))
+        return _result(img.transpose(op), chat_session_id, "flip")
 
     try:
-        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right, chat_session_id)
     except Exception as e:
         return json.dumps({"error": f"Detection failed: {e}"})
     if not regions:
@@ -217,7 +226,7 @@ def flip(
         x1, y1, x2, y2 = regions[idx]["bbox"]
         patch = img.crop((x1, y1, x2, y2)).transpose(op)
         out.paste(patch.resize((x2 - x1, y2 - y1), Image.LANCZOS), (x1, y1))
-    return _result(out)
+    return _result(out, chat_session_id, "flip")
 
 
 @mcp.tool()
@@ -230,6 +239,7 @@ def resize(
     all_objects: bool = False,
     from_right: bool = False,
     detection_s3_key: str | None = None,
+    chat_session_id: str | None = None,
 ) -> str:
     """Resize the whole image or show a resized object within its bounding box."""
     if width <= 0 or height <= 0:
@@ -241,10 +251,10 @@ def resize(
         return json.dumps({"error": f"Failed to load image: {e}"})
 
     if not label:
-        return _result(img.resize((width, height), Image.LANCZOS))
+        return _result(img.resize((width, height), Image.LANCZOS), chat_session_id, "resize")
 
     try:
-        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right, chat_session_id)
     except Exception as e:
         return json.dumps({"error": f"Detection failed: {e}"})
     if not regions:
@@ -273,7 +283,7 @@ def resize(
         cx = max(0, min(x1 + (bw - width)  // 2, out.width  - width))
         cy = max(0, min(y1 + (bh - height) // 2, out.height - height))
         out.paste(resized, (cx, cy))
-    return _result(out)
+    return _result(out, chat_session_id, "resize")
 
 
 @mcp.tool()
@@ -287,6 +297,7 @@ def crop(
     indices: list[int] | None = None,
     from_right: bool = False,
     detection_s3_key: str | None = None,
+    chat_session_id: str | None = None,
 ) -> str:
     """
     Without label: crop full image using percentages (0-100). x1/y1/x2/y2 are percentages NOT pixels.
@@ -306,10 +317,10 @@ def crop(
         py2 = int(y2 * h / 100)
         if px1 >= px2 or py1 >= py2:
             return json.dumps({"error": f"Invalid crop percentages ({x1},{y1},{x2},{y2})"})
-        return _result(img.crop((px1, py1, px2, py2)))
+        return _result(img.crop((px1, py1, px2, py2)), chat_session_id, "crop")
 
     try:
-        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right, chat_session_id)
     except Exception as e:
         return json.dumps({"error": f"Detection failed: {e}"})
     if not regions:
@@ -317,7 +328,7 @@ def crop(
 
     selected = _select(regions, indices, all_objects=False)
     rx1, ry1, rx2, ry2 = regions[selected[0]]["bbox"]
-    return _result(img.crop((rx1, ry1, rx2, ry2)))
+    return _result(img.crop((rx1, ry1, rx2, ry2)), chat_session_id, "crop")
 
 
 @mcp.tool()
@@ -329,6 +340,7 @@ def add_noise(
     all_objects: bool = False,
     from_right: bool = False,
     detection_s3_key: str | None = None,
+    chat_session_id: str | None = None,
 ) -> str:
     """Add salt-and-pepper noise to the whole image or to specific detected objects."""
     if not 0.0 <= amount <= 1.0:
@@ -349,10 +361,10 @@ def add_noise(
         return patch
 
     if not label:
-        return _result(_apply(img))
+        return _result(_apply(img), chat_session_id, "add_noise")
 
     try:
-        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right)
+        regions = _get_regions(_detection_key(image_s3_key, detection_s3_key), label, from_right, chat_session_id)
     except Exception as e:
         return json.dumps({"error": f"Detection failed: {e}"})
     if not regions:
@@ -363,7 +375,7 @@ def add_noise(
         x1, y1, x2, y2 = regions[idx]["bbox"]
         patch = _apply(img.crop((x1, y1, x2, y2)))
         out.paste(patch.resize((x2 - x1, y2 - y1), Image.LANCZOS), (x1, y1))
-    return _result(out)
+    return _result(out, chat_session_id, "add_noise")
 
 
 if __name__ == "__main__":
