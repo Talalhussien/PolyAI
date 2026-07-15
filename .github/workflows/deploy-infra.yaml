@@ -1,0 +1,27 @@
+name: Deploy Infra Config
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - 'docker-compose.yaml'
+      - 'monitoring/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ github.ref == 'refs/heads/main' && 'prod.talal.fursa.click' || 'dev.talal.fursa.click' }}
+          username: ubuntu
+          key: ${{ github.ref == 'refs/heads/main' && secrets.PROD_INSTANCE_SSH_KEY || secrets.DEV_INSTANCE_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/PolyAI
+            git fetch origin
+            git checkout ${{ github.ref_name }}
+            git reset --hard origin/${{ github.ref_name }}
+            docker compose pull
+            docker compose up -d
+            docker compose ps

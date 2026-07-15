@@ -9,6 +9,7 @@ import MessageBubble from "./message-bubble";
 
 export default function Chat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [imageB64, setImageB64] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -60,13 +61,16 @@ export default function Chat() {
     setLoading(true);
 
     try {
-      const { response, annotated_image } = await sendMessage(next);
+      const { response, annotated_image, processed_image_s3_key, chat_session_id } =
+        await sendMessage(next, chatSessionId);
+      setChatSessionId(chat_session_id);
       setMessages([
         ...next,
         {
           role: "assistant",
           content: response,
-          ...(annotated_image ? { annotated_image } : {}),
+          ...(annotated_image         ? { annotated_image }         : {}),
+          ...(processed_image_s3_key  ? { processed_image_s3_key }  : {}),
         },
       ]);
     } catch (err) {

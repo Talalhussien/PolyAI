@@ -33,6 +33,7 @@ s3_client = boto3.client("s3", region_name=AWS_REGION)
 
 class PredictRequest(BaseModel):
     image_s3_key: str
+    chat_session_id: str | None = None
 
 
 class PredictResponse(BaseModel):
@@ -137,7 +138,10 @@ def predict(request: PredictRequest):
     annotated_image.save(predicted_path)
     time_took = round(time.time() - start, 3)
 
-    predicted_s3_key = f"predictions/{uid}/predicted{ext}"
+    if request.chat_session_id:
+        predicted_s3_key = f"chats/{request.chat_session_id}/predictions/{uid}/predicted{ext}"
+    else:
+        predicted_s3_key = f"predictions/{uid}/predicted{ext}"
     with open(predicted_path, "rb") as f:
         s3_client.put_object(
             Bucket=AWS_S3_BUCKET,
@@ -296,9 +300,10 @@ def health():
     return {"status": "ok"}
 
 
+init_db()
+
 if __name__ == "__main__":
     import uvicorn
 
-    init_db()
-
     uvicorn.run(app, host="0.0.0.0", port=8080)
+

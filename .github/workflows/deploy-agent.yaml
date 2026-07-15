@@ -1,0 +1,44 @@
+name: Deploy Agent
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - 'services/agent/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: services/agent
+          push: true
+          tags: talalhussien/agent-service:${{ github.sha }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ github.ref == 'refs/heads/main' && 'prod.talal.fursa.click' || 'dev.talal.fursa.click' }}
+          username: ubuntu
+          key: ${{ github.ref == 'refs/heads/main' && secrets.PROD_INSTANCE_SSH_KEY || secrets.DEV_INSTANCE_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/PolyAI
+            git fetch origin
+            git checkout ${{ github.ref_name }}
+            git reset --hard origin/${{ github.ref_name }}
+            sed -i "s/^AGENT_TAG=.*/AGENT_TAG=${{ github.sha }}/" .env
+            docker compose pull agent
+            docker compose up -d agent
+            docker compose ps

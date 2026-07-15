@@ -9,8 +9,12 @@ langchain[openai]
 langchain[anthropic]
 langchain[google-genai]
 langchain-aws
+langchain-mcp-adapters
 
 httpx
 pydantic
 boto3
+pillow
 pytest
+pytest-asyncio
+prometheus-fastapi-instrumentator
