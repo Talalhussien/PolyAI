@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "observability": {
+      "command": "python",
+      "args": ["services/observability-mcp/app.py"],
+      "env": {
+        "DEV_PROMETHEUS_URL": "http://dev.talal.fursa.click:9090",
+        "PROD_PROMETHEUS_URL": "http://prod.talal.fursa.click:9090",
+        "DEV_S3_LOGS_BUCKET": "talal-polyai-logs-dev",
+        "PROD_S3_LOGS_BUCKET": "talal-polyai-logs-prod",
+        "AWS_REGION": "us-east-1"
+      }
+    }
+  }
+}

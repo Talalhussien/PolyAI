@@ -1,0 +1,25 @@
+# Apply: kubectl apply -R -f infra/k8s/dev
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: dev
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+
+    scrape_configs:
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+
+      - job_name: 'yolo-service'
+        static_configs:
+          - targets: ['yolo-svc:8080']
+        metrics_path: /metrics
+
+      - job_name: 'agent-service'
+        static_configs:
+          - targets: ['agent-svc:8000']
+        metrics_path: /metrics

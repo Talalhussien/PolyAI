@@ -1,0 +1,13 @@
+# Apply: kubectl apply -R -f infra/k8s/prod
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-svc
+  namespace: prod
+spec:
+  selector:
+    app: grafana
+  ports:
+    - protocol: TCP
+      port: 3001
+      targetPort: 3000

@@ -1,0 +1,18 @@
+# Static provisioning, per the tutorial: this PV points at a real, manually
+# created EBS volume. Cluster-scoped (no namespace field) but logically
+# belongs to prod's Prometheus PVC via its storageClassName + capacity match.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: prometheus-pv-prod
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ebs-sc
+  persistentVolumeReclaimPolicy: Retain
+  csi:
+    driver: ebs.csi.aws.com
+    volumeHandle: vol-0309ef17f4eee773b
+    fsType: ext4

@@ -1,0 +1,32 @@
+# Apply: kubectl apply -R -f infra/k8s/prod
+# No probes/resources/HPA required here — the task scopes those three additions
+# to Yolo, Agent, and Frontend only.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: img-proc-mcp
+  namespace: prod
+  labels:
+    app: img-proc-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: img-proc-mcp
+  template:
+    metadata:
+      labels:
+        app: img-proc-mcp
+    spec:
+      containers:
+      - name: img-proc-mcp
+        image: talalhussien/img-proc-mcp:0.0.1
+        ports:
+        - containerPort: 9000
+        env:
+        - name: YOLO_SERVICE_URL
+          value: "http://yolo-svc:8080"
+        - name: AWS_REGION
+          value: "us-east-1"
+        - name: AWS_S3_BUCKET
+          value: "talal-polyai-images"
