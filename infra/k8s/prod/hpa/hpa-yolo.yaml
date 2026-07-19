@@ -1,0 +1,22 @@
+# Requires metrics-server installed in kube-system, and the Deployment above
+# to have resources.requests.cpu set (HPA computes % against that baseline).
+# Apply: kubectl apply -R -f infra/k8s/prod
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: yolo-hpa
+  namespace: prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: yolo
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50

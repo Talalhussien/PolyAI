@@ -1,0 +1,13 @@
+# Apply: kubectl apply -R -f infra/k8s/dev
+apiVersion: v1
+kind: Service
+metadata:
+  name: img-proc-mcp-svc
+  namespace: dev
+spec:
+  selector:
+    app: img-proc-mcp
+  ports:
+    - protocol: TCP
+      port: 9000
+      targetPort: 9000

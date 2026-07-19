@@ -1,0 +1,39 @@
+# Apply: kubectl apply -R -f infra/k8s/prod
+# Requires prometheus-configmap.yaml and a Bound prometheus-pvc (same folder)
+# already applied in this namespace.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: prod
+  labels:
+    app: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      securityContext:
+        fsGroup: 65534   # Prometheus runs as user "nobody" (65534) — needed so it can write to the mounted volume
+      containers:
+      - name: prometheus
+        image: prom/prometheus
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+          - name: prometheus-config
+            mountPath: /etc/prometheus/
+          - name: prometheus-storage
+            mountPath: /prometheus
+      volumes:
+        - name: prometheus-config
+          configMap:
+            name: prometheus-config
+        - name: prometheus-storage
+          persistentVolumeClaim:
+            claimName: prometheus-pvc

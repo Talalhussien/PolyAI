@@ -4,8 +4,9 @@ on:
   push:
     branches: [dev, main]
     paths:
-      - 'docker-compose.yaml'
+      - 'infra/**'   
       - 'monitoring/**'
+      - 'docker-compose.yaml'
 
 jobs:
   deploy:
