@@ -542,6 +542,13 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/ready")
+def readiness():
+    if not _MCP_TOOLS_IMPL:
+        raise HTTPException(status_code=503, detail="MCP tools not loaded")
+    return {"status": "ready"}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

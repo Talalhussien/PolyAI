@@ -33,12 +33,14 @@ spec:
         # The frontend Dockerfile has no HEALTHCHECK / health endpoint today, so
         # a TCP probe is used instead of an HTTP one.
         livenessProbe:
-          tcpSocket:
+          httpGet:
+            path: /api/health
             port: 3000
           initialDelaySeconds: 15
           periodSeconds: 20
         readinessProbe:
-          tcpSocket:
+          httpGet:
+            path: /api/ready
             port: 3000
           initialDelaySeconds: 10
           periodSeconds: 10
