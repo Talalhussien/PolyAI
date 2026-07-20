@@ -300,6 +300,14 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/ready")
+def readiness():
+    """Readiness check endpoint."""
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    return {"status": "ready"}
+
+
 init_db()
 
 if __name__ == "__main__":
