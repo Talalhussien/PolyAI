@@ -192,7 +192,7 @@
               }
             }
           },
-          "version": "13.1.0"
+          "version": "13.1.1"
         }
       }
     },
@@ -340,7 +340,7 @@
               }
             }
           },
-          "version": "13.1.0"
+          "version": "13.1.1"
         }
       }
     },
@@ -456,7 +456,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.1.0"
+          "version": "13.1.1"
         }
       }
     },
@@ -580,7 +580,7 @@
               }
             }
           },
-          "version": "13.1.0"
+          "version": "13.1.1"
         }
       }
     },
@@ -704,7 +704,7 @@
               }
             }
           },
-          "version": "13.1.0"
+          "version": "13.1.1"
         }
       }
     },
@@ -826,7 +826,7 @@
               }
             }
           },
-          "version": "13.1.0"
+          "version": "13.1.1"
         }
       }
     },
@@ -948,7 +948,7 @@
               }
             }
           },
-          "version": "13.1.0"
+          "version": "13.1.1"
         }
       }
     },
@@ -1068,7 +1068,7 @@
               }
             }
           },
-          "version": "13.1.0"
+          "version": "13.1.1"
         }
       }
     },
@@ -1232,7 +1232,7 @@
               }
             }
           },
-          "version": "13.1.0"
+          "version": "13.1.1"
         }
       }
     },
@@ -1274,13 +1274,47 @@
         "links": [],
         "title": "Error rate over time",
         "vizConfig": {
-          "group": "stat",
+          "group": "timeseries",
           "kind": "VizConfig",
           "spec": {
             "fieldConfig": {
               "defaults": {
                 "color": {
-                  "mode": "thresholds"
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "line",
+                  "fillOpacity": 0,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 1,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "auto",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
                 },
                 "thresholds": {
                   "mode": "absolute",
@@ -1299,24 +1333,26 @@
               "overrides": []
             },
             "options": {
-              "colorMode": "value",
-              "graphMode": "area",
-              "justifyMode": "auto",
-              "orientation": "auto",
-              "percentChangeColorMode": "standard",
-              "reduceOptions": {
-                "calcs": [
-                  "lastNotNull"
-                ],
-                "fields": "",
-                "values": false
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
               },
-              "showPercentChange": false,
-              "textMode": "auto",
-              "wideLayout": true
+              "legend": {
+                "calcs": [],
+                "displayMode": "list",
+                "enableFacetedFilter": false,
+                "overflow": "ellipsis",
+                "placement": "bottom",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "single",
+                "sort": "none"
+              }
             }
           },
-          "version": "13.1.0"
+          "version": "13.1.1"
         }
       }
     },
@@ -1458,7 +1494,7 @@
               }
             }
           },
-          "version": "13.1.0"
+          "version": "13.1.1"
         }
       }
     },
@@ -1563,7 +1599,7 @@
               "wideLayout": true
             }
           },
-          "version": "13.1.0"
+          "version": "13.1.1"
         }
       }
     },
@@ -1658,7 +1694,7 @@
               "valueMode": "color"
             }
           },
-          "version": "13.1.0"
+          "version": "13.1.1"
         }
       }
     },
@@ -1781,7 +1817,7 @@
               }
             }
           },
-          "version": "13.1.0"
+          "version": "13.1.1"
         }
       }
     }
@@ -1994,7 +2030,7 @@
       "1d"
     ],
     "fiscalYearStartMonth": 0,
-    "from": "now-5m",
+    "from": "now-15m",
     "hideTimepicker": false,
     "timezone": "browser",
     "to": "now"
