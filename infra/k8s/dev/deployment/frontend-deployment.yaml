@@ -21,6 +21,9 @@ spec:
         image: talalhussien/frontend-service:0.0.4
         ports:
         - containerPort: 3000
+        env:
+        - name: AGENT_URL
+          value: "http://agent-svc:8000"
         resources:
           requests:
             cpu: "100m"
