@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: agent
-        image: talalhussien/agent-service:0.0.2
+        image: talalhussien/agent-service:0.0.4
         ports:
         - containerPort: 8000
         env:

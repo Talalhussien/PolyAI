@@ -971,7 +971,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum by (status) (rate(agent_chat_requests_total[5m])) * 60",
+                      "expr": "sum by (status) (rate(agent_chat_requests_total[1m]))",
                       "legendFormat": "{{status}}",
                       "range": true
                     },
@@ -1091,13 +1091,57 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "histogram_quantile(0.50, sum by (le) (rate(agent_chat_request_latency_seconds_bucket[5m])))",
-                      "legendFormat": "__auto",
+                      "expr": "histogram_quantile(0.50, sum(rate(agent_chat_request_latency_seconds_bucket[5m])) by (le))",
+                      "legendFormat": "p50",
                       "range": true
                     },
                     "version": "v0"
                   },
                   "refId": "A"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "PBFA97CFB590B2093"
+                    },
+                    "group": "prometheus",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "editorMode": "code",
+                      "expr": "histogram_quantile(0.95, sum(rate(agent_chat_request_latency_seconds_bucket[5m])) by (le))",
+                      "instant": false,
+                      "legendFormat": "p95",
+                      "range": true
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "B"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "PBFA97CFB590B2093"
+                    },
+                    "group": "prometheus",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "editorMode": "code",
+                      "expr": "histogram_quantile(0.99, sum(rate(agent_chat_request_latency_seconds_bucket[5m])) by (le))",
+                      "instant": false,
+                      "legendFormat": "p99",
+                      "range": true
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "C"
                 }
               }
             ],
@@ -1105,10 +1149,10 @@
             "transformations": []
           }
         },
-        "description": "",
+        "description": "Request latency - p50, p95, p99",
         "id": 24,
         "links": [],
-        "title": "Request latency - p50",
+        "title": "Request latency - p50, p95, p99",
         "vizConfig": {
           "group": "timeseries",
           "kind": "VizConfig",
@@ -1211,7 +1255,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "histogram_quantile(0.95, sum by (le) (rate(agent_chat_request_latency_seconds_bucket[5m])))",
+                      "expr": "sum(rate(agent_chat_requests_total{status=\"error\"}[5m])) / sum(rate(agent_chat_requests_total[5m]))",
                       "legendFormat": "__auto",
                       "range": true
                     },
@@ -1225,52 +1269,18 @@
             "transformations": []
           }
         },
-        "description": "Request latency - p95",
+        "description": "Error rate over time",
         "id": 25,
         "links": [],
-        "title": "Request latency - p95",
+        "title": "Error rate over time",
         "vizConfig": {
-          "group": "timeseries",
+          "group": "stat",
           "kind": "VizConfig",
           "spec": {
             "fieldConfig": {
               "defaults": {
                 "color": {
-                  "mode": "palette-classic"
-                },
-                "custom": {
-                  "axisBorderShow": false,
-                  "axisCenteredZero": false,
-                  "axisColorMode": "text",
-                  "axisLabel": "",
-                  "axisPlacement": "auto",
-                  "barAlignment": 0,
-                  "barWidthFactor": 0.6,
-                  "drawStyle": "line",
-                  "fillOpacity": 0,
-                  "gradientMode": "none",
-                  "hideFrom": {
-                    "legend": false,
-                    "tooltip": false,
-                    "viz": false
-                  },
-                  "insertNulls": false,
-                  "lineInterpolation": "linear",
-                  "lineWidth": 1,
-                  "pointSize": 5,
-                  "scaleDistribution": {
-                    "type": "linear"
-                  },
-                  "showPoints": "auto",
-                  "showValues": false,
-                  "spanNulls": false,
-                  "stacking": {
-                    "group": "A",
-                    "mode": "none"
-                  },
-                  "thresholdsStyle": {
-                    "mode": "off"
-                  }
+                  "mode": "thresholds"
                 },
                 "thresholds": {
                   "mode": "absolute",
@@ -1289,23 +1299,21 @@
               "overrides": []
             },
             "options": {
-              "annotations": {
-                "clustering": -1,
-                "multiLane": false
+              "colorMode": "value",
+              "graphMode": "area",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "percentChangeColorMode": "standard",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ],
+                "fields": "",
+                "values": false
               },
-              "legend": {
-                "calcs": [],
-                "displayMode": "list",
-                "enableFacetedFilter": false,
-                "overflow": "ellipsis",
-                "placement": "bottom",
-                "showLegend": true
-              },
-              "tooltip": {
-                "hideZeros": false,
-                "mode": "single",
-                "sort": "none"
-              }
+              "showPercentChange": false,
+              "textMode": "auto",
+              "wideLayout": true
             }
           },
           "version": "13.1.0"
@@ -1331,128 +1339,8 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "histogram_quantile(0.99, sum by (le) (rate(agent_chat_request_latency_seconds_bucket[5m])))",
-                      "legendFormat": "__auto",
-                      "range": true
-                    },
-                    "version": "v0"
-                  },
-                  "refId": "A"
-                }
-              }
-            ],
-            "queryOptions": {},
-            "transformations": []
-          }
-        },
-        "description": "Request latency - p99",
-        "id": 26,
-        "links": [],
-        "title": "Request latency - p99",
-        "vizConfig": {
-          "group": "timeseries",
-          "kind": "VizConfig",
-          "spec": {
-            "fieldConfig": {
-              "defaults": {
-                "color": {
-                  "mode": "palette-classic"
-                },
-                "custom": {
-                  "axisBorderShow": false,
-                  "axisCenteredZero": false,
-                  "axisColorMode": "text",
-                  "axisLabel": "",
-                  "axisPlacement": "auto",
-                  "barAlignment": 0,
-                  "barWidthFactor": 0.6,
-                  "drawStyle": "line",
-                  "fillOpacity": 0,
-                  "gradientMode": "none",
-                  "hideFrom": {
-                    "legend": false,
-                    "tooltip": false,
-                    "viz": false
-                  },
-                  "insertNulls": false,
-                  "lineInterpolation": "linear",
-                  "lineWidth": 1,
-                  "pointSize": 5,
-                  "scaleDistribution": {
-                    "type": "linear"
-                  },
-                  "showPoints": "auto",
-                  "showValues": false,
-                  "spanNulls": false,
-                  "stacking": {
-                    "group": "A",
-                    "mode": "none"
-                  },
-                  "thresholdsStyle": {
-                    "mode": "off"
-                  }
-                },
-                "thresholds": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": 0
-                    },
-                    {
-                      "color": "red",
-                      "value": 80
-                    }
-                  ]
-                }
-              },
-              "overrides": []
-            },
-            "options": {
-              "annotations": {
-                "clustering": -1,
-                "multiLane": false
-              },
-              "legend": {
-                "calcs": [],
-                "displayMode": "list",
-                "enableFacetedFilter": false,
-                "overflow": "ellipsis",
-                "placement": "bottom",
-                "showLegend": true
-              },
-              "tooltip": {
-                "hideZeros": false,
-                "mode": "single",
-                "sort": "none"
-              }
-            }
-          },
-          "version": "13.1.0"
-        }
-      }
-    },
-    "panel-27": {
-      "kind": "Panel",
-      "spec": {
-        "data": {
-          "kind": "QueryGroup",
-          "spec": {
-            "queries": [
-              {
-                "kind": "PanelQuery",
-                "spec": {
-                  "hidden": false,
-                  "query": {
-                    "datasource": {
-                      "name": "PBFA97CFB590B2093"
-                    },
-                    "group": "prometheus",
-                    "kind": "DataQuery",
-                    "spec": {
-                      "editorMode": "builder",
-                      "expr": "agent_input_tokens_total",
-                      "legendFormat": "{{Input tokens}}",
+                      "expr": "rate(agent_input_tokens_total[5m])",
+                      "legendFormat": "Input tokens",
                       "range": true
                     },
                     "version": "v0"
@@ -1471,10 +1359,10 @@
                     "group": "prometheus",
                     "kind": "DataQuery",
                     "spec": {
-                      "editorMode": "builder",
-                      "expr": "agent_output_tokens_total",
+                      "editorMode": "code",
+                      "expr": "rate(agent_output_tokens_total[5m])",
                       "instant": false,
-                      "legendFormat": "{{Output tokens}}",
+                      "legendFormat": "Output tokens",
                       "range": true
                     },
                     "version": "v0"
@@ -1488,7 +1376,7 @@
           }
         },
         "description": "Input and output token counts over time",
-        "id": 27,
+        "id": 26,
         "links": [],
         "title": "Input and output token counts over time",
         "vizConfig": {
@@ -2083,19 +1971,6 @@
             "x": 12,
             "y": 45
           }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-27"
-            },
-            "height": 8,
-            "width": 12,
-            "x": 0,
-            "y": 53
-          }
         }
       ]
     }
@@ -2119,7 +1994,7 @@
       "1d"
     ],
     "fiscalYearStartMonth": 0,
-    "from": "now-1h",
+    "from": "now-5m",
     "hideTimepicker": false,
     "timezone": "browser",
     "to": "now"
