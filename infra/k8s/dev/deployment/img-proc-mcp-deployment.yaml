@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: img-proc-mcp
-        image: talalhussien/img-proc-mcp:0.0.1
+        image: talalhussien/img-proc-mcp:0.0.4
         ports:
         - containerPort: 9000
         env:

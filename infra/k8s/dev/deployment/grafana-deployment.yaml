@@ -27,7 +27,4 @@ spec:
         - name: GF_SECURITY_ADMIN_USER
           value: "admin"
         - name: GF_SECURITY_ADMIN_PASSWORD
-          value: "changeme123"   # move to a Secret before using this outside of learning/dev
-        # Prometheus datasource is not auto-provisioned here (no ConfigMap
-        # mount) — add it manually in the UI at http://prometheus-svc:9090
-        # after the Pod is running, or add a datasource-provisioning ConfigMap.
+          value: "changeme123"  
