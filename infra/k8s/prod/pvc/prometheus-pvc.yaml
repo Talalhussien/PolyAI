@@ -1,0 +1,16 @@
+# Apply: kubectl apply -R -f infra/k8s/prod
+# Dynamically provisioned by the ebs-sc StorageClass (see ../storage/) — no
+# static PV needed. The CSI driver creates a real EBS volume automatically
+# once the Prometheus Pod in this namespace is scheduled.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-pvc
+  namespace: prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ebs-sc
+  resources:
+    requests:
+      storage: 5Gi

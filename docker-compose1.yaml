@@ -1,0 +1,87 @@
+services:
+  yolo:
+    image: talalhussien/yolo-service:0.0.1
+    ports:
+      - "8080:8080"
+    env_file:
+      - services/yolo/.env
+    volumes:
+      - ~/.aws:/home/appuser/.aws:ro
+      - ./services/yolo/yolov8n.pt:/app/yolov8n.pt:ro
+    networks:
+      - polyai-net
+
+  img-proc-mcp:
+    image: talalhussien/img-proc-mcp:0.0.1
+    ports:
+      - "9000:9000"
+    env_file:
+      - services/img-proc-mcp/.env
+    volumes:
+      - ~/.aws:/root/.aws:ro
+    networks:
+      - polyai-net
+
+  agent:
+    image: talalhussien/agent-service:0.0.1
+    ports:
+      - "8000:8000"
+    env_file:
+      - services/agent/.env
+    environment:
+      - YOLO_SERVICE_URL=http://yolo:8080
+      - MCP_SERVER_URL=http://img-proc-mcp:9000
+    volumes:
+      - ~/.aws:/home/appuser/.aws:ro
+    networks:
+      - polyai-net
+
+  frontend:
+    image: talalhussien/frontend-service:0.0.1
+    ports:
+      - "3000:3000"
+    networks:
+      - polyai-net
+
+  # node-exporter:
+  #   image: quay.io/prometheus/node-exporter:latest
+  #   command:
+  #     - '--path.rootfs=/host'
+  #   network_mode: host
+  #   pid: host
+  #   restart: unless-stopped
+  #   volumes:
+  #     - '/:/host:ro,rslave'
+
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - polyai-net
+      - monitoring-net
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+    networks:
+      - monitoring-net
+
+networks:
+  polyai-net:
+  monitoring-net:
+
+volumes:
+  prometheus-data:
+  grafana-data:

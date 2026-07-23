@@ -1,0 +1,9 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ebs-sc
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer   # delays binding until a Pod is scheduled, so the EBS volume lands in the same AZ as the node
+allowVolumeExpansion: true
+parameters:
+  type: gp3

@@ -3,6 +3,12 @@ services:
     image: talalhussien/yolo-service:${YOLO_TAG:-0.0.1}
     container_name: polyai-yolo
     restart: unless-stopped
+    labels:
+      service_name: "yolo"
+    logging:
+      driver: json-file
+      options:
+        labels: "service_name"
     ports:
       - "8080:8080"
     environment:
@@ -21,6 +27,12 @@ services:
     image: talalhussien/img-proc-mcp:${MCP_TAG:-0.0.1}
     container_name: polyai-img-proc-mcp
     restart: unless-stopped
+    labels:
+      service_name: "img-proc-mcp"
+    logging:
+      driver: json-file
+      options:
+        labels: "service_name"
     ports:
       - "9000:9000"
     environment:
@@ -40,6 +52,12 @@ services:
     image: talalhussien/agent-service:${AGENT_TAG:-0.0.1}
     container_name: polyai-agent
     restart: unless-stopped
+    labels:
+      service_name: "agent"
+    logging:
+      driver: json-file
+      options:
+        labels: "service_name"
     ports:
       - "8000:8000"
     environment:
@@ -65,6 +83,12 @@ services:
     image: talalhussien/frontend-service:${FRONTEND_TAG:-0.0.1}
     container_name: polyai-frontend
     restart: unless-stopped
+    labels:
+      service_name: "frontend"
+    logging:
+      driver: json-file
+      options:
+        labels: "service_name"
     ports:
       - "3000:3000"
     depends_on:
@@ -83,6 +107,17 @@ services:
     volumes:
       - '/:/host:ro,rslave'
 
+  fluent-bit:
+    image: fluent/fluent-bit:4.2.7
+    container_name: polyai-fluent-bit
+    restart: unless-stopped
+    environment:
+      - S3_LOGS_BUCKET=${S3_LOGS_BUCKET}
+    volumes:
+      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/log:/var/log
+
   prometheus:
     image: prom/prometheus
     container_name: polyai-prometheus
@@ -92,7 +127,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     depends_on:
       - node-exporter
@@ -110,7 +145,7 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
     depends_on:
       - prometheus
     networks:
