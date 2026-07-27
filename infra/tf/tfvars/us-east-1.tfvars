@@ -34,3 +34,6 @@ worker_desired_capacity = 1
 # worker_desired_capacity = 0
 
 kubernetes_version = "1.30"
+
+# Must be globally unique across all of AWS, not just this account.
+s3_bucket_name = "talalhuss-polyai-images"

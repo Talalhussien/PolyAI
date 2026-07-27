@@ -70,3 +70,8 @@ variable "kubernetes_version" {
   type        = string
   default     = "1.30"
 }
+
+variable "s3_bucket_name" {
+  description = "Name of the S3 bucket the app services (YOLO/Agent/img-proc-mcp) read/write images to"
+  type        = string
+}

@@ -23,6 +23,11 @@ variable "public_subnet_ids" {
   type        = list(string)
 }
 
+variable "azs" {
+  description = "Availability Zones matching public_subnet_ids, in the same order — used to place the Prometheus EBS volumes in the same AZ the control plane (and observed worker) instances actually land in"
+  type        = list(string)
+}
+
 variable "key_pair_name" {
   description = "Existing EC2 key pair name used for SSH access"
   type        = string
@@ -55,5 +60,10 @@ variable "worker_desired_capacity" {
 
 variable "kubernetes_version" {
   description = "Kubernetes minor version to install, e.g. 1.30"
+  type        = string
+}
+
+variable "s3_bucket_name" {
+  description = "Name of the S3 bucket the app services read/write images to"
   type        = string
 }

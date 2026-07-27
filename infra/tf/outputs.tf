@@ -22,3 +22,18 @@ output "security_group_id" {
   description = "Security group shared by control plane and worker nodes"
   value       = module.k8s_cluster.security_group_id
 }
+
+output "images_bucket_name" {
+  description = "Name of the S3 bucket for application images"
+  value       = module.k8s_cluster.images_bucket_name
+}
+
+output "prometheus_dev_volume_id" {
+  description = "EBS volume ID for dev Prometheus storage — use as volumeHandle in infra/k8s/dev/pv/prometheus-pv.yaml"
+  value       = module.k8s_cluster.prometheus_dev_volume_id
+}
+
+output "prometheus_prod_volume_id" {
+  description = "EBS volume ID for prod Prometheus storage — use as volumeHandle in infra/k8s/prod/pv/prometheus-pv.yaml"
+  value       = module.k8s_cluster.prometheus_prod_volume_id
+}

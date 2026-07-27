@@ -1,3 +1,5 @@
+# Volume is Terraform-managed: infra/tf/modules/k8s-cluster/main.tf
+# resource "aws_ebs_volume" "prometheus_dev" (us-east-1b, 5Gi, gp3).
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -11,5 +13,5 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   csi:
     driver: ebs.csi.aws.com
-    volumeHandle: vol-0ea376b7800407535
+    volumeHandle: vol-024f10d8a5b19be86
     fsType: ext4

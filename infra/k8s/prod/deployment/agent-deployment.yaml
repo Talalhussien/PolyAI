@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: agent
-        image: talalhussien/agent-service:0.0.2
+        image: talalhussien/agent-service:0.0.4
         ports:
         - containerPort: 8000
         env:
@@ -29,7 +29,7 @@ spec:
         - name: AWS_REGION
           value: "us-east-1"
         - name: AWS_S3_BUCKET
-          value: "talal-polyai-images"
+          value: "talalhuss-polyai-images"
         - name: MODEL
           value: "bedrock_converse/amazon.nova-lite-v1:0"
         # LLM API keys (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_API_KEY) are

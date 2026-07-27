@@ -27,4 +27,7 @@ spec:
         - name: GF_SECURITY_ADMIN_USER
           value: "admin"
         - name: GF_SECURITY_ADMIN_PASSWORD
-          value: "changeme123"  
+          valueFrom:
+            secretKeyRef:
+              name: grafana-admin
+              key: admin-password

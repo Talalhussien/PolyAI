@@ -27,4 +27,4 @@ spec:
         - name: AWS_REGION
           value: "us-east-1"
         - name: AWS_S3_BUCKET
-          value: "talal-polyai-images"
+          value: "talalhuss-polyai-images"

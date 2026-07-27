@@ -23,7 +23,15 @@ sysctl --system
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y apt-transport-https ca-certificates curl gnupg awscli
+apt-get install -y apt-transport-https ca-certificates curl gnupg unzip
+
+# Install AWS CLI v2 via the official installer — not `apt-get install awscli`,
+# which pulls Ubuntu's packaged v1 and its large, unrelated dependency chain
+# (ImageMagick, fonts, PIL, etc.) that has nothing to do with this script.
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
+unzip -q awscliv2.zip
+./aws/install
+rm -rf awscliv2.zip aws/
 
 # 3. Install CRI-O (container runtime).
 mkdir -p /etc/apt/keyrings

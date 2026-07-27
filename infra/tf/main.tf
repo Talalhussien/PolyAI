@@ -41,6 +41,7 @@ module "k8s_cluster" {
   aws_region        = var.aws_region
   vpc_id            = module.vpc.vpc_id
   vpc_cidr          = var.vpc_cidr
+  azs               = var.azs
   public_subnet_ids = module.vpc.public_subnets
 
   key_pair_name    = var.key_pair_name
@@ -54,4 +55,6 @@ module "k8s_cluster" {
   worker_desired_capacity = var.worker_desired_capacity
 
   kubernetes_version = var.kubernetes_version
+
+  s3_bucket_name = var.s3_bucket_name
 }

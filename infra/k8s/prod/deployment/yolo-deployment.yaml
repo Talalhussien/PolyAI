@@ -18,14 +18,14 @@ spec:
     spec:
       containers:
       - name: yolo
-        image: talalhussien/yolo-service:0.0.1
+        image: talalhussien/yolo-service:0.0.4
         ports:
         - containerPort: 8080
         env:
         - name: AWS_REGION
           value: "us-east-1"
         - name: AWS_S3_BUCKET
-          value: "talal-polyai-images"
+          value: "talalhuss-polyai-images"
         - name: CONFIDENCE_THRESHOLD
           value: "0.5"
         # AWS credentials: relies on the node's IAM instance profile for S3 access
