@@ -9,11 +9,6 @@ variable "vpc_cidr" {
   default     = "10.0.0.0/16"
 }
 
-variable "azs" {
-  description = "Availability Zones to spread the public subnets across"
-  type        = list(string)
-}
-
 variable "public_subnet_cidrs" {
   description = "CIDR blocks for the public subnets (one per AZ)"
   type        = list(string)

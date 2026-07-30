@@ -33,6 +33,17 @@ unzip -q awscliv2.zip
 ./aws/install
 rm -rf awscliv2.zip aws/
 
+# SSM parameters aren't Terraform-managed, so a join command published by a
+# PREVIOUS cluster generation survives `terraform destroy`/`apply` cycles.
+# Delete it now, as early as possible, so the stale value's exposure window
+# is as short as possible — otherwise a worker that boots faster than this
+# control plane finishes kubeadm init (below) can read that old value and
+# get a join command pointing at a control plane that no longer exists,
+# which no amount of retrying can ever fix (confirmed live: this is exactly
+# what happened on a fresh apply — the worker read a stale IP/token from a
+# prior cluster generation and failed forever until manually rejoined).
+aws ssm delete-parameter --region "${aws_region}" --name "${ssm_param_name}" 2>/dev/null || true
+
 # 3. Install CRI-O (container runtime).
 mkdir -p /etc/apt/keyrings
 curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/prerelease:/main/deb/Release.key |

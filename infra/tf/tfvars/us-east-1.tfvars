@@ -5,7 +5,6 @@
 
 aws_region = "us-east-1"
 
-azs                 = ["us-east-1a", "us-east-1b"]
 vpc_cidr            = "10.0.0.0/16"
 public_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24"]
 
@@ -14,8 +13,10 @@ cluster_name = "talalhuss"
 # Existing EC2 key pair in this AWS account/region.
 key_pair_name = "talal key1"
 
-# My current public IP. Never leave this as 0.0.0.0/0.
-allowed_ssh_cidr = "79.177.155.6/32"
+# Open to the internet — my IP changes between sessions and this avoids
+# re-editing this file every time. Real exposure risk: SSH is still
+# key-only, but the port itself is reachable by anyone, not just me.
+allowed_ssh_cidr = "0.0.0.0/0"
 
 control_plane_instance_type = "t3.medium"
 worker_instance_type        = "t3.medium"

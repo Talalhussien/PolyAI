@@ -117,8 +117,11 @@ resource "aws_iam_role_policy" "cp_ssm_write" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["ssm:PutParameter", "ssm:AddTagsToResource"]
+      Effect = "Allow"
+      # ssm:DeleteParameter added so the control plane can clear a stale
+      # join-command parameter left over from a previous cluster generation
+      # before publishing its own — see control-plane-init.sh.tpl.
+      Action   = ["ssm:PutParameter", "ssm:AddTagsToResource", "ssm:DeleteParameter"]
       Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/${var.cluster_name}/*"
     }]
   })

@@ -81,4 +81,29 @@ if [ -z "$JOIN_CMD" ]; then
   exit 1
 fi
 
-eval "$JOIN_CMD"
+# 7. Run the join with its own retry loop, separate from the SSM-fetch loop
+# above. Having a valid join command doesn't guarantee the control plane is
+# actually reachable *right now* — e.g. if it was recently stopped/started,
+# its API server may still be coming back up. `kubeadm join` fails fast
+# ("context deadline exceeded") in that case, and under `set -e` a single
+# failure here used to kill the whole script permanently, leaving the
+# worker fully bootstrapped but never actually part of the cluster,
+# requiring a manual re-run of this exact command.
+JOIN_OK=0
+for i in $(seq 1 10); do
+  if eval "$JOIN_CMD"; then
+    JOIN_OK=1
+    break
+  fi
+  echo "kubeadm join failed (control plane likely unreachable), retrying in 30s ($i/10)..."
+  # Clear any partial state from the failed attempt before retrying —
+  # kubeadm join is not safely re-runnable without this if it got further
+  # than the preflight checks before failing.
+  kubeadm reset -f --cri-socket=unix:///var/run/crio/crio.sock >/dev/null 2>&1 || true
+  sleep 30
+done
+
+if [ "$JOIN_OK" -ne 1 ]; then
+  echo "kubeadm join failed after 10 attempts" >&2
+  exit 1
+fi

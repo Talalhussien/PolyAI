@@ -12,6 +12,20 @@ provider "aws" {
   region = var.aws_region
 }
 
+# Fetched dynamically instead of hardcoded, so this config isn't tied to
+# assumptions about which AZs happen to be available in one specific AWS
+# account. sort() makes the order deterministic (alphabetical) rather than
+# whatever order the AWS API returns — azs[1] must stay us-east-1b, since
+# the worker and Prometheus EBS volumes are pinned there and EBS volumes
+# are AZ-locked.
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+locals {
+  azs = slice(sort(data.aws_availability_zones.available.names), 0, 2)
+}
+
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.0"
@@ -19,7 +33,7 @@ module "vpc" {
   name = "${var.cluster_name}-vpc"
   cidr = var.vpc_cidr
 
-  azs            = var.azs
+  azs            = local.azs
   public_subnets = var.public_subnet_cidrs
 
   # No private subnets / NAT gateway: every instance is public, which keeps
@@ -41,7 +55,7 @@ module "k8s_cluster" {
   aws_region        = var.aws_region
   vpc_id            = module.vpc.vpc_id
   vpc_cidr          = var.vpc_cidr
-  azs               = var.azs
+  azs               = local.azs
   public_subnet_ids = module.vpc.public_subnets
 
   key_pair_name    = var.key_pair_name

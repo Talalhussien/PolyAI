@@ -1,7 +1,8 @@
 # Apply: kubectl apply -R -f infra/k8s/prod
-# Dynamically provisioned by the ebs-sc StorageClass (see ../storage/) — no
-# static PV needed. The CSI driver creates a real EBS volume automatically
-# once the Prometheus Pod in this namespace is scheduled.
+# Statically provisioned: binds to the pre-existing PV in ../pv/prometheus-pv.yaml,
+# which points (via volumeHandle) at the Terraform-managed EBS volume
+# aws_ebs_volume.prometheus_prod. Not dynamic — the CSI driver attaches an
+# already-existing volume here, it doesn't create a new one.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
