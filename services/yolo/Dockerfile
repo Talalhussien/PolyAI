@@ -1,3 +1,4 @@
+# cd.yaml verification: end-to-end check of the fixed prod PR-based flow.
 # ── Stage 1: builder ────────────────────────────────────────────────────────
 FROM python:3.12-slim-trixie AS builder
 
