@@ -1,0 +1,103 @@
+name: Build and Deploy Changed Services
+
+on:
+  push:
+    branches: [dev, main]
+    # No `paths:` filter — the spec says "triggered on push to dev and main"
+    # with no scoping, so every push runs this workflow, including ones that
+    # only touch infra/k8s/**. Loop safety comes from two other layers
+    # instead: (1) the manifest-bump commit below is pushed using the
+    # default GITHUB_TOKEN, and GitHub never triggers a new workflow run
+    # from a GITHUB_TOKEN-authenticated push (a built-in anti-recursion
+    # rule, not something this workflow has to implement itself); (2) even
+    # if a human pushes an infra/k8s-only change directly, the `detect` job
+    # below finds zero changed services under services/** and the
+    # build-and-deploy job's `if:` guard skips cleanly — no wasted build,
+    # no possibility of a loop either way.
+
+concurrency:
+  group: cd-${{ github.ref_name }}
+  cancel-in-progress: false # serialize runs on the same branch so two pushes can't race on the commit
+
+permissions:
+  contents: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.detect.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: detect
+        run: |
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.sha }}"
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            # First push to this branch — no prior commit to diff against;
+            # use the empty tree as the base so every existing service is
+            # considered (safe default for a branch's first-ever push).
+            BEFORE=$(git hash-object -t tree /dev/null)
+          fi
+
+          CHANGED_DIRS=$(git diff --name-only "$BEFORE" "$AFTER" -- services/ | cut -d/ -f2 | sort -u)
+
+          MATRIX="[]"
+          for svc in yolo agent frontend img-proc-mcp; do
+            if echo "$CHANGED_DIRS" | grep -qx "$svc"; then
+              MATRIX=$(echo "$MATRIX" | jq -c --arg s "$svc" '. + [$s]')
+            fi
+          done
+          echo "services=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "Changed services: $MATRIX"
+
+  build-and-deploy:
+    needs: detect
+    if: needs.detect.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.detect.outputs.services) }}
+      fail-fast: false
+      max-parallel: 1 # sequential: each job commits+pushes to the same branch, avoids a git push race
+    env:
+      ENV: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }} # always push against the branch tip, in case a prior matrix job already advanced it
+
+      - name: Map service to image name
+        id: image
+        run: |
+          declare -A MAP=( [yolo]=yolo-service [agent]=agent-service [frontend]=frontend-service [img-proc-mcp]=img-proc-mcp )
+          echo "name=${MAP[${{ matrix.service }}]}" >> "$GITHUB_OUTPUT"
+
+      - id: tag
+        run: echo "tag=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          push: true
+          tags: talalhussien/${{ steps.image.outputs.name }}:${{ steps.tag.outputs.tag }}
+
+      - name: Update manifest and commit
+        run: |
+          FILE="infra/k8s/${ENV}/${{ matrix.service }}/deployment.yaml"
+          sed -i -E "s|(image: talalhussien/${{ steps.image.outputs.name }}:).*|\1${{ steps.tag.outputs.tag }}|" "$FILE"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --ff-only origin "${{ github.ref_name }}" # pick up any prior matrix job's commit in this same run
+          git add "$FILE"
+          git commit -m "cd: bump ${{ matrix.service }} (${ENV}) to ${{ steps.tag.outputs.tag }} [skip ci]"
+          git push origin "${{ github.ref_name }}"

@@ -1,0 +1,84 @@
+name: Provision and Bootstrap Cluster
+
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: "AWS region to provision into (must have a matching infra/tf/tfvars/<region>.tfvars file)"
+        required: true
+        default: "us-east-1"
+
+concurrency:
+  group: cluster-${{ inputs.region }}
+  cancel-in-progress: false # never cancel a live terraform apply mid-flight
+
+permissions:
+  id-token: write # required for OIDC (aws-actions/configure-aws-credentials)
+  contents: read
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    outputs:
+      control_plane_ip: ${{ steps.tf_outputs.outputs.ip }}
+      dev_volume_id: ${{ steps.tf_outputs.outputs.dev_vol }}
+      prod_volume_id: ${{ steps.tf_outputs.outputs.prod_vol }}
+    defaults:
+      run:
+        working-directory: infra/tf
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::228281126655:role/talalhuss-github-terraform
+          aws-region: ${{ inputs.region }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Select or create workspace
+        run: terraform workspace select "${{ inputs.region }}" || terraform workspace new "${{ inputs.region }}"
+
+      - name: Terraform apply
+        run: terraform apply -auto-approve -var-file="tfvars/${{ inputs.region }}.tfvars"
+
+      - id: tf_outputs
+        name: Read Terraform outputs
+        run: |
+          echo "ip=$(terraform output -raw control_plane_public_ip)" >> "$GITHUB_OUTPUT"
+          echo "dev_vol=$(terraform output -raw prometheus_dev_volume_id)" >> "$GITHUB_OUTPUT"
+          echo "prod_vol=$(terraform output -raw prometheus_prod_volume_id)" >> "$GITHUB_OUTPUT"
+
+  bootstrap:
+    needs: provision
+    runs-on: ubuntu-latest
+    env:
+      CP_IP: ${{ needs.provision.outputs.control_plane_ip }}
+      DEV_VOL: ${{ needs.provision.outputs.dev_volume_id }}
+      PROD_VOL: ${{ needs.provision.outputs.prod_volume_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.CLUSTER_SSH_PRIVATE_KEY }}" > ~/.ssh/cluster.pem
+          chmod 600 ~/.ssh/cluster.pem
+
+      - name: Wait for SSH
+        run: |
+          for i in $(seq 1 20); do
+            timeout 10 ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -i ~/.ssh/cluster.pem ubuntu@$CP_IP "echo ok" && break
+            sleep 15
+          done
+
+      - name: Copy manifests to control plane
+        run: scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/cluster.pem -r infra/k8s infra/argocd ubuntu@$CP_IP:~/
+
+      - name: Run bootstrap script over SSH
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/cluster.pem ubuntu@$CP_IP \
+            "DEV_VOL='$DEV_VOL' PROD_VOL='$PROD_VOL' bash -s" < infra/scripts/bootstrap.sh
