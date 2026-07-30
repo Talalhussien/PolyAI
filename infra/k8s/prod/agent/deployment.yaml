@@ -1,0 +1,56 @@
+# Apply: kubectl apply -R -f infra/k8s/prod
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent
+  namespace: prod
+  labels:
+    app: agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent
+  template:
+    metadata:
+      labels:
+        app: agent
+    spec:
+      containers:
+      - name: agent
+        image: talalhussien/agent-service:0.0.4
+        ports:
+        - containerPort: 8000
+        env:
+        - name: YOLO_SERVICE_URL
+          value: "http://yolo-svc:8080"          # k8s Service DNS, not Compose container name
+        - name: MCP_SERVER_URL
+          value: "http://img-proc-mcp-svc:9000"
+        - name: AWS_REGION
+          value: "us-east-1"
+        - name: AWS_S3_BUCKET
+          value: "talalhuss-polyai-images"
+        - name: MODEL
+          value: "bedrock_converse/amazon.nova-lite-v1:0"
+        # LLM API keys (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_API_KEY) are
+        # not hardcoded here — inject them via a Secret and envFrom/secretKeyRef
+        # rather than plaintext in this file.
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
