@@ -1,6 +1,9 @@
-# Static provisioning, per the tutorial: this PV points at a real, manually
-# created EBS volume. Cluster-scoped (no namespace field) but logically
-# belongs to prod's Prometheus PVC via its storageClassName + capacity match.
+# Static provisioning: this PV points at a real EBS volume. Cluster-scoped
+# (no namespace field) but logically belongs to prod's Prometheus PVC via its
+# storageClassName + capacity match.
+#
+# Volume is Terraform-managed: infra/tf/modules/k8s-cluster/main.tf
+# resource "aws_ebs_volume" "prometheus_prod" (us-east-1b, 5Gi, gp3).
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -14,5 +17,5 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   csi:
     driver: ebs.csi.aws.com
-    volumeHandle: vol-0309ef17f4eee773b
+    volumeHandle: vol-03e610e60b055e5b7
     fsType: ext4

@@ -1,0 +1,49 @@
+# Apply: kubectl apply -R -f infra/k8s/dev
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yolo
+  namespace: dev
+  labels:
+    app: yolo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yolo
+  template:
+    metadata:
+      labels:
+        app: yolo
+    spec:
+      containers:
+      - name: yolo
+        image: talalhussien/yolo-service:0.0.4
+        ports:
+        - containerPort: 8080
+        env:
+        - name: AWS_REGION
+          value: "us-east-1"
+        - name: AWS_S3_BUCKET
+          value: "talalhuss-polyai-images"
+        - name: CONFIDENCE_THRESHOLD
+          value: "0.5"
+        resources:
+          requests:
+            cpu: "250m"       # baseline the HPA's 50% target is measured against
+            memory: "512Mi"   # YOLO loads a model into memory at startup
+          limits:
+            cpu: "1"
+            memory: "1Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 20   # model load takes time — avoid killing it mid-boot
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
