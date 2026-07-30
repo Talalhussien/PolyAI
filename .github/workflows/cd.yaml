@@ -21,6 +21,7 @@ concurrency:
 
 permissions:
   contents: write
+  pull-requests: write # needed to open the prod PR (main is PR-protected; see the prod branch below)
 
 jobs:
   detect:
@@ -91,13 +92,37 @@ jobs:
           tags: talalhussien/${{ steps.image.outputs.name }}:${{ steps.tag.outputs.tag }}
 
       - name: Update manifest and commit
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           FILE="infra/k8s/${ENV}/${{ matrix.service }}/deployment.yaml"
           sed -i -E "s|(image: talalhussien/${{ steps.image.outputs.name }}:).*|\1${{ steps.tag.outputs.tag }}|" "$FILE"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --ff-only origin "${{ github.ref_name }}" # pick up any prior matrix job's commit in this same run
-          git add "$FILE"
-          git commit -m "cd: bump ${{ matrix.service }} (${ENV}) to ${{ steps.tag.outputs.tag }} [skip ci]"
-          git push origin "${{ github.ref_name }}"
+
+          if [ "${{ github.ref_name }}" = "dev" ]; then
+            # dev has no branch protection -- direct push is correct here,
+            # and matches "dev remains automatic": ArgoCD's dev Applications
+            # pick this commit up on their own with no human step at all.
+            git pull --ff-only origin dev
+            git add "$FILE"
+            git commit -m "cd: bump ${{ matrix.service }} (dev) to ${{ steps.tag.outputs.tag }} [skip ci]"
+            git push origin dev
+          else
+            # main requires a PR (repository ruleset: "Changes must be made
+            # through a pull request", confirmed live -- a direct push here
+            # is rejected). Not routed around with a PAT/auto-merge: prod is
+            # already meant to be a manual, human-gated path end to end (its
+            # ArgoCD Applications require manual sync by design), so a
+            # human reviewing and merging this PR is a second, consistent
+            # checkpoint on the same path, not a workaround.
+            BRANCH="cd/${{ matrix.service }}-${{ steps.tag.outputs.tag }}"
+            git checkout -b "$BRANCH"
+            git add "$FILE"
+            git commit -m "cd: bump ${{ matrix.service }} (prod) to ${{ steps.tag.outputs.tag }}"
+            git push origin "$BRANCH"
+            gh pr create --base main --head "$BRANCH" \
+              --title "cd: bump ${{ matrix.service }} (prod) to ${{ steps.tag.outputs.tag }}" \
+              --body "Automated image tag bump for \`${{ matrix.service }}\`. Merge to let ArgoCD's \`${{ matrix.service }}-prod\` Application see the change (it still requires a manual \`argocd app sync\` after merge -- this PR only updates what git/ArgoCD compare against)."
+          fi
