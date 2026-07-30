@@ -6,6 +6,18 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  # Remote state — required so both GitHub Actions (ephemeral runners) and
+  # local machines read/write the exact same state, with locking to prevent
+  # concurrent applies and versioning for recovery. State is namespaced per
+  # Terraform workspace automatically (env:/<workspace>/cluster.tfstate),
+  # so one bucket serves every region without further config.
+  backend "s3" {
+    bucket       = "talalhuss-polyai-tfstate"
+    key          = "cluster.tfstate"
+    region       = "us-east-1"
+    use_lockfile = true
+  }
 }
 
 provider "aws" {
