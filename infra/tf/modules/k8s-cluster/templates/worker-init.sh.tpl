@@ -35,9 +35,9 @@ rm -rf awscliv2.zip aws/
 
 # 3. Install CRI-O (container runtime).
 mkdir -p /etc/apt/keyrings
-curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/prerelease:/main/deb/Release.key |
+curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/stable:/v${kubernetes_version}/deb/Release.key |
   gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
-echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.io/addons:/cri-o:/prerelease:/main/deb/ /" |
+echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.io/addons:/cri-o:/stable:/v${kubernetes_version}/deb/ /" |
   tee /etc/apt/sources.list.d/cri-o.list
 apt-get update -y
 apt-get install -y cri-o
