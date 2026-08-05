@@ -7,11 +7,8 @@ terraform {
     }
   }
 
-  # Remote state — required so both GitHub Actions (ephemeral runners) and
-  # local machines read/write the exact same state, with locking to prevent
-  # concurrent applies and versioning for recovery. State is namespaced per
-  # Terraform workspace automatically (env:/<workspace>/cluster.tfstate),
-  # so one bucket serves every region without further config.
+  #S3 backend gives GitHub Actions and your laptop the same locked,versioned, 
+  #recoverable state file, auto-separated per region by workspace, all in one bucket.
   backend "s3" {
     bucket       = "talalhuss-polyai-tfstate"
     key          = "cluster.tfstate"
@@ -24,12 +21,8 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Fetched dynamically instead of hardcoded, so this config isn't tied to
-# assumptions about which AZs happen to be available in one specific AWS
-# account. sort() makes the order deterministic (alphabetical) rather than
-# whatever order the AWS API returns — azs[1] must stay us-east-1b, since
-# the worker and Prometheus EBS volumes are pinned there and EBS volumes
-# are AZ-locked.
+
+#AZs are fetched dynamically and sorted alphabetically for a stable order
 data "aws_availability_zones" "available" {
   state = "available"
 }
