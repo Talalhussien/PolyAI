@@ -42,7 +42,7 @@ kubectl -n argocd wait --for=condition=Available --timeout=300s deployment --all
 echo "Applying namespaces, storage class, network policies..."
 kubectl apply -f k8s/namespaces/
 kubectl apply -f k8s/storage/
-kubectl apply -f k8s/dev/networkpolicy/ -f k8s/prod/networkpolicy/
+
 
 echo "Applying Prometheus PVs with this run's live volume IDs..."
 : "${DEV_VOL:?DEV_VOL must be set}"
