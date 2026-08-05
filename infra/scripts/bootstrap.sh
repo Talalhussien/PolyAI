@@ -1,7 +1,7 @@
 #!/bin/bash
-# Idempotent cluster bootstrap: Calico, EBS CSI driver, ArgoCD, and the 12
-# ArgoCD Applications. Runs once per cluster lifetime via cluster.yaml's
-# Bootstrap job (over SSH), but safe to re-run — every step below is
+# Idempotent cluster bootstrap: Calico, EBS CSI driver, metrics-server,
+# ArgoCD, and the 12 ArgoCD Applications. Runs once per cluster lifetime via
+# cluster.yaml's Bootstrap job (over SSH), but safe to re-run — every step below is
 # `kubectl apply`-based (not `create`), so re-running after a partial
 # failure or a manual re-trigger converges rather than erroring out.
 #
@@ -28,6 +28,9 @@ until [ "$(kubectl get nodes --no-headers 2>/dev/null | grep -c ' Ready ')" -ge 
 
 echo "Installing the EBS CSI driver..."
 kubectl apply -k 'github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-1.31'
+
+echo "Installing metrics-server..."
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 
 echo "Installing ArgoCD..."
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -

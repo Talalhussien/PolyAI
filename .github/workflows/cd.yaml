@@ -3,18 +3,7 @@ name: Build and Deploy Changed Services
 on:
   push:
     branches: [dev, main]
-    # No `paths:` filter — the spec says "triggered on push to dev and main"
-    # with no scoping, so every push runs this workflow, including ones that
-    # only touch infra/k8s/**. Loop safety comes from two other layers
-    # instead: (1) the manifest-bump commit below is pushed using the
-    # default GITHUB_TOKEN, and GitHub never triggers a new workflow run
-    # from a GITHUB_TOKEN-authenticated push (a built-in anti-recursion
-    # rule, not something this workflow has to implement itself); (2) even
-    # if a human pushes an infra/k8s-only change directly, the `detect` job
-    # below finds zero changed services under services/** and the
-    # build-and-deploy job's `if:` guard skips cleanly — no wasted build,
-    # no possibility of a loop either way.
-
+   
 concurrency:
   group: cd-${{ github.ref_name }}
   cancel-in-progress: false # serialize runs on the same branch so two pushes can't race on the commit
