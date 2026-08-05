@@ -39,3 +39,20 @@ kubernetes_version = "1.30"
 
 # Must be globally unique across all of AWS, not just this account.
 s3_bucket_name = "talalhuss-polyai-images"
+
+# The hosted zone is shared and looked up as a Terraform data source. The
+# certificate must already exist in us-east-1 and cover every hostname below.
+route53_zone_name      = "fursa.click"
+acm_certificate_domain  = "*.fursa.click"
+ingress_http_node_port  = 30080
+ingress_https_node_port = 30443
+
+dns_records = {
+  dev_frontend  = "dev.fursa.click"
+  dev_agent     = "dev-agent.fursa.click"
+  prod_frontend = "app.fursa.click"
+  prod_agent    = "prod-agent.fursa.click"
+  grafana       = "grafana.fursa.click"
+  prometheus    = "prometheus.fursa.click"
+  argocd        = "argocd.fursa.click"
+}

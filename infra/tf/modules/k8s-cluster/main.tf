@@ -26,44 +26,37 @@ resource "aws_security_group" "cluster" {
   description = "kubeadm cluster: SSH + all intra-VPC traffic"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.allowed_ssh_cidr]
-  }
-
-  ingress {
-    description = "All traffic between cluster nodes"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = [var.vpc_cidr]
-  }
-
-  # App NodePorts — frontend, agent, yolo, img-proc-mcp, prometheus, grafana.
-  # Opens these exact port numbers for future type: NodePort Services in
-
-  dynamic "ingress" {
-    for_each = toset([3000, 3001, 8000, 8080, 9000, 9090])
-    content {
-      description = "App NodePort ${ingress.value}"
-      from_port   = ingress.value
-      to_port     = ingress.value
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-    }
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   tags = { Name = "${var.cluster_name}-sg" }
+}
+
+resource "aws_security_group_rule" "cluster_ssh" {
+  type              = "ingress"
+  security_group_id = aws_security_group.cluster.id
+  description       = "SSH"
+  from_port         = 22
+  to_port           = 22
+  protocol          = "tcp"
+  cidr_blocks       = [var.allowed_ssh_cidr]
+}
+
+resource "aws_security_group_rule" "cluster_intra_vpc" {
+  type              = "ingress"
+  security_group_id = aws_security_group.cluster.id
+  description       = "All traffic between cluster nodes"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = [var.vpc_cidr]
+}
+
+resource "aws_security_group_rule" "cluster_egress" {
+  type              = "egress"
+  security_group_id = aws_security_group.cluster.id
+  description       = "Allow cluster nodes to reach required external services"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
 }
 
 # ---------------------------------------------------------------------------
@@ -325,32 +318,5 @@ resource "aws_s3_bucket_versioning" "images" {
   bucket = aws_s3_bucket.images.id
   versioning_configuration {
     status = "Enabled"
-  }
-}
-
-# ---------------------------------------------------------------------------
-# Prometheus EBS volumes — dev and prod.
-# ---------------------------------------------------------------------------
-resource "aws_ebs_volume" "prometheus_dev" {
-  availability_zone = var.azs[1]
-  size              = 5
-  type              = "gp3"
-
-  tags = {
-    Name        = "prometheus-data-dev"
-    Project     = "PolyAI"
-    Environment = "dev"
-  }
-}
-
-resource "aws_ebs_volume" "prometheus_prod" {
-  availability_zone = var.azs[1]
-  size              = 5
-  type              = "gp3"
-
-  tags = {
-    Name        = "prometheus-data-prod"
-    Project     = "PolyAI"
-    Environment = "prod"
   }
 }

@@ -60,7 +60,6 @@ module "k8s_cluster" {
   aws_region        = var.aws_region
   vpc_id            = module.vpc.vpc_id
   vpc_cidr          = var.vpc_cidr
-  azs               = local.azs
   public_subnet_ids = module.vpc.public_subnets
 
   key_pair_name    = var.key_pair_name
@@ -76,4 +75,21 @@ module "k8s_cluster" {
   kubernetes_version = var.kubernetes_version
 
   s3_bucket_name = var.s3_bucket_name
+}
+
+module "ingress" {
+  source = "./modules/ingress"
+
+  cluster_name             = var.cluster_name
+  vpc_id                   = module.vpc.vpc_id
+  public_subnet_ids        = module.vpc.public_subnets
+  worker_asg_name          = module.k8s_cluster.worker_asg_name
+  worker_security_group_id = module.k8s_cluster.security_group_id
+
+  route53_zone_name      = var.route53_zone_name
+  acm_certificate_arn    = var.acm_certificate_arn
+  acm_certificate_domain = var.acm_certificate_domain
+  http_node_port         = var.ingress_http_node_port
+  https_node_port        = var.ingress_https_node_port
+  dns_records            = var.dns_records
 }
