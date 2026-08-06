@@ -70,6 +70,7 @@ resource "aws_iam_role_policy" "github_terraform_ingress" {
         Effect = "Allow"
         Action = [
           "acm:DescribeCertificate",
+          "acm:GetCertificate",
           "acm:ListTagsForCertificate"
         ]
         Resource = local.certificate_arn
