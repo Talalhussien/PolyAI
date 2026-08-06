@@ -54,7 +54,8 @@ resource "aws_iam_role_policy" "github_terraform_ingress" {
         Action = [
           "route53:ChangeResourceRecordSets",
           "route53:GetHostedZone",
-          "route53:ListResourceRecordSets"
+          "route53:ListResourceRecordSets",
+          "route53:ListTagsForResource"
         ]
         Resource = local.hosted_zone_arn
       },
