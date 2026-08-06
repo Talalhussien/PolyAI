@@ -27,13 +27,3 @@ output "images_bucket_arn" {
   description = "ARN of the S3 bucket for application images"
   value       = aws_s3_bucket.images.arn
 }
-
-output "prometheus_dev_volume_id" {
-  description = "EBS volume ID for dev Prometheus storage — use as volumeHandle in infra/k8s/dev/pv/prometheus-pv.yaml"
-  value       = aws_ebs_volume.prometheus_dev.id
-}
-
-output "prometheus_prod_volume_id" {
-  description = "EBS volume ID for prod Prometheus storage — use as volumeHandle in infra/k8s/prod/pv/prometheus-pv.yaml"
-  value       = aws_ebs_volume.prometheus_prod.id
-}

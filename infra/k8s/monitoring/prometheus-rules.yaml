@@ -1,0 +1,95 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: polyai-platform
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: polyai.workloads
+      rules:
+        - alert: PolyAIApplicationUnavailable
+          expr: kube_deployment_status_replicas_available{namespace=~"dev|prod", deployment=~"frontend|agent|yolo|img-proc-mcp"} < 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "PolyAI deployment has no available replicas"
+            description: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has no available replicas for more than five minutes."
+        - alert: PolyAIPodCrashLooping
+          expr: max_over_time(kube_pod_container_status_waiting_reason{namespace=~"dev|prod", reason="CrashLoopBackOff"}[5m]) >= 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PolyAI pod is crash looping"
+            description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is in CrashLoopBackOff."
+        - alert: PolyAIHighHTTP5xxRate
+          expr: sum(rate(http_requests_total{namespace=~"dev|prod", status=~"5.."}[5m])) / clamp_min(sum(rate(http_requests_total{namespace=~"dev|prod"}[5m])), 1) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PolyAI HTTP 5xx rate is high"
+            description: "More than five percent of observed PolyAI HTTP requests are failing with 5xx responses."
+        - alert: PolyAIHighRequestLatency
+          expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=~"dev|prod"}[5m]))) > 2
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PolyAI request latency is high"
+            description: "The observed p95 request latency is above two seconds."
+    - name: polyai.infrastructure
+      rules:
+        - alert: KubernetesNodeNotReady
+          expr: kube_node_status_condition{condition="Ready", status="true"} == 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Kubernetes node is not ready"
+            description: "Node {{ $labels.node }} has not been Ready for ten minutes."
+        - alert: KubernetesNodeDiskPressure
+          expr: kube_node_status_condition{condition="DiskPressure", status="true"} == 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Kubernetes node reports disk pressure"
+            description: "Node {{ $labels.node }} reports DiskPressure."
+        - alert: KubernetesPersistentVolumeAlmostFull
+          expr: kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 0.15
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Persistent volume is almost full"
+            description: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} has less than fifteen percent free space."
+        - alert: PrometheusTargetDown
+          expr: up == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Prometheus target is down"
+            description: "Prometheus target {{ $labels.job }} at {{ $labels.instance }} has been down for ten minutes."
+    - name: argocd.health
+      rules:
+        - alert: ArgoCDApplicationOutOfSync
+          expr: argocd_app_info{sync_status="OutOfSync"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ArgoCD application is out of sync"
+            description: "ArgoCD application {{ $labels.name }} is OutOfSync."
+        - alert: ArgoCDApplicationUnhealthy
+          expr: argocd_app_info{health_status=~"Degraded|Missing|Unknown"} == 1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ArgoCD application is unhealthy"
+            description: "ArgoCD application {{ $labels.name }} reports health {{ $labels.health_status }}."

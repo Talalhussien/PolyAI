@@ -70,3 +70,58 @@ variable "s3_bucket_name" {
   description = "Name of the S3 bucket the app services (YOLO/Agent/img-proc-mcp) read/write images to"
   type        = string
 }
+
+variable "route53_zone_name" {
+  description = "Existing public Route 53 hosted zone used for platform DNS records"
+  type        = string
+  default     = "fursa.click"
+}
+
+variable "acm_certificate_arn" {
+  description = "Optional existing ACM certificate ARN. When null, Terraform looks up an ISSUED certificate by acm_certificate_domain."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "acm_certificate_domain" {
+  description = "Domain or wildcard name used to discover the existing ACM certificate"
+  type        = string
+  default     = "*.talalhuss.fursa.click"
+}
+
+variable "ingress_http_node_port" {
+  description = "Fixed HTTP NodePort exposed by ingress-nginx"
+  type        = number
+  default     = 30080
+
+  validation {
+    condition     = var.ingress_http_node_port >= 30000 && var.ingress_http_node_port <= 32767
+    error_message = "The HTTP ingress NodePort must be in the Kubernetes NodePort range."
+  }
+}
+
+variable "ingress_https_node_port" {
+  description = "Fixed HTTPS NodePort exposed by ingress-nginx"
+  type        = number
+  default     = 30443
+
+  validation {
+    condition     = var.ingress_https_node_port >= 30000 && var.ingress_https_node_port <= 32767
+    error_message = "The HTTPS ingress NodePort must be in the Kubernetes NodePort range."
+  }
+}
+
+variable "dns_records" {
+  description = "Map of stable record keys to hostnames that alias the shared ALB"
+  type        = map(string)
+  default = {
+    dev_frontend  = "dev.talalhuss.fursa.click"
+    dev_agent     = "dev-agent.talalhuss.fursa.click"
+    prod_frontend = "app.talalhuss.fursa.click"
+    prod_agent    = "prod-agent.talalhuss.fursa.click"
+    grafana       = "grafana.talalhuss.fursa.click"
+    prometheus    = "prometheus.talalhuss.fursa.click"
+    argocd        = "argocd.talalhuss.fursa.click"
+  }
+}

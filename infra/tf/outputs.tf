@@ -28,12 +28,17 @@ output "images_bucket_name" {
   value       = module.k8s_cluster.images_bucket_name
 }
 
-output "prometheus_dev_volume_id" {
-  description = "EBS volume ID for dev Prometheus storage — use as volumeHandle in infra/k8s/dev/pv/prometheus-pv.yaml"
-  value       = module.k8s_cluster.prometheus_dev_volume_id
+output "ingress_alb_dns_name" {
+  description = "Public DNS name of the shared ingress Application Load Balancer"
+  value       = module.ingress.alb_dns_name
 }
 
-output "prometheus_prod_volume_id" {
-  description = "EBS volume ID for prod Prometheus storage — use as volumeHandle in infra/k8s/prod/pv/prometheus-pv.yaml"
-  value       = module.k8s_cluster.prometheus_prod_volume_id
+output "ingress_alb_zone_id" {
+  description = "Route 53 alias zone ID of the shared ingress Application Load Balancer"
+  value       = module.ingress.alb_zone_id
+}
+
+output "ingress_dns_records" {
+  description = "Fully-qualified DNS names managed for the shared ingress ALB"
+  value       = module.ingress.dns_records
 }

@@ -4,10 +4,13 @@ kind: Service
 metadata:
   name: agent-svc
   namespace: prod
+  labels:
+    app: agent
 spec:
   selector:
     app: agent
   ports:
     - protocol: TCP
+      name: http
       port: 8000
       targetPort: 8000

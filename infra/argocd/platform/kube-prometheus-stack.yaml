@@ -1,0 +1,114 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 86.0.0
+    helm:
+      releaseName: monitoring
+      values: |
+        grafana:
+          enabled: true
+          admin:
+            existingSecret: grafana-admin
+            userKey: admin-user
+            passwordKey: admin-password
+          persistence:
+            enabled: true
+            type: pvc
+            storageClassName: ebs-sc
+            accessModes:
+              - ReadWriteOnce
+            size: 10Gi
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          service:
+            type: ClusterIP
+          sidecar:
+            dashboards:
+              enabled: true
+              searchNamespace: ALL
+              label: grafana_dashboard
+              labelValue: "1"
+        prometheus:
+          enabled: true
+          prometheusSpec:
+            retention: 15d
+            retentionSize: 40GB
+            resources:
+              requests:
+                cpu: 500m
+                memory: 1Gi
+              limits:
+                cpu: 2
+                memory: 4Gi
+            serviceMonitorSelectorNilUsesHelmValues: false
+            serviceMonitorNamespaceSelector: {}
+            ruleSelectorNilUsesHelmValues: false
+            ruleNamespaceSelector: {}
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: ebs-sc
+                  accessModes:
+                    - ReadWriteOnce
+                  resources:
+                    requests:
+                      storage: 50Gi
+        alertmanager:
+          enabled: true
+          alertmanagerSpec:
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+            storage:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: ebs-sc
+                  accessModes:
+                    - ReadWriteOnce
+                  resources:
+                    requests:
+                      storage: 5Gi
+          config:
+            global: {}
+            route:
+              receiver: default
+              group_by:
+                - alertname
+                - namespace
+              group_wait: 30s
+              group_interval: 5m
+              repeat_interval: 4h
+            receivers:
+              - name: default
+        nodeExporter:
+          enabled: true
+        kubeStateMetrics:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
