@@ -1,6 +1,6 @@
 output "control_plane_public_ip" {
   description = "Public IP of the control plane instance"
-  value       = aws_instance.control_plane.public_ip
+  value       = data.aws_instance.control_plane.public_ip
 }
 
 output "control_plane_id" {
