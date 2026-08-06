@@ -26,3 +26,9 @@ in `infra/tf/certificate` creates and validates
 `*.talalhuss.fursa.click` plus `talalhuss.fursa.click`. Run that stack before
 the cluster stack; it uses a separate state file so destroying the cluster does
 not destroy the certificate.
+
+The GitHub Actions role also needs the Route 53, ACM read, and ALB permissions
+used by those stacks. They are managed separately in
+`infra/tf/bootstrap-iam`, using the state key
+`github-terraform-permissions.tfstate`. The provisioning workflow applies this
+stack before the certificate and cluster stacks.
