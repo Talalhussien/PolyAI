@@ -4,6 +4,8 @@ kind: Service
 metadata:
   name: agent-svc
   namespace: dev
+  labels:
+    app: agent
 spec:
   selector:
     app: agent

@@ -27,7 +27,7 @@ worker_instance_type        = "t3.medium"
 # While actively working on the cluster:
 worker_min_size         = 1
 worker_max_size         = 3
-worker_desired_capacity = 1
+worker_desired_capacity = 2
 
 
 # When finished, to stop paying for worker EC2 instances, switch to:
@@ -41,18 +41,18 @@ kubernetes_version = "1.30"
 s3_bucket_name = "talalhuss-polyai-images"
 
 # The hosted zone is shared and looked up as a Terraform data source. The
-# certificate must already exist in us-east-1 and cover every hostname below.
-route53_zone_name      = "fursa.click"
-acm_certificate_domain  = "*.fursa.click"
+# persistent certificate stack in infra/tf/certificate manages this wildcard.
+route53_zone_name       = "fursa.click"
+acm_certificate_domain  = "*.talalhuss.fursa.click"
 ingress_http_node_port  = 30080
 ingress_https_node_port = 30443
 
 dns_records = {
-  dev_frontend  = "dev.fursa.click"
-  dev_agent     = "dev-agent.fursa.click"
-  prod_frontend = "app.fursa.click"
-  prod_agent    = "prod-agent.fursa.click"
-  grafana       = "grafana.fursa.click"
-  prometheus    = "prometheus.fursa.click"
-  argocd        = "argocd.fursa.click"
+  dev_frontend  = "dev.talalhuss.fursa.click"
+  dev_agent     = "dev-agent.talalhuss.fursa.click"
+  prod_frontend = "app.talalhuss.fursa.click"
+  prod_agent    = "prod-agent.talalhuss.fursa.click"
+  grafana       = "grafana.talalhuss.fursa.click"
+  prometheus    = "prometheus.talalhuss.fursa.click"
+  argocd        = "argocd.talalhuss.fursa.click"
 }

@@ -21,6 +21,8 @@ creates the Kubernetes Secret used by the ArgoCD-managed kube-prometheus-stack
 without committing the password to this repository.
 
 The Terraform ingress module looks up an existing public `fursa.click` Route
-53 hosted zone and an issued ACM certificate. The certificate must be in the
-selected AWS region and cover the hostnames in
-`infra/tf/tfvars/us-east-1.tfvars`.
+53 hosted zone and an issued ACM certificate. The persistent certificate stack
+in `infra/tf/certificate` creates and validates
+`*.talalhuss.fursa.click` plus `talalhuss.fursa.click`. Run that stack before
+the cluster stack; it uses a separate state file so destroying the cluster does
+not destroy the certificate.

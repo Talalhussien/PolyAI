@@ -8,7 +8,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: dev-agent.fursa.click
+    - host: dev-agent.talalhuss.fursa.click
       http:
         paths:
           - path: /

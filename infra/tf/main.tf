@@ -56,11 +56,12 @@ module "vpc" {
 module "k8s_cluster" {
   source = "./modules/k8s-cluster"
 
-  cluster_name      = var.cluster_name
-  aws_region        = var.aws_region
-  vpc_id            = module.vpc.vpc_id
-  vpc_cidr          = var.vpc_cidr
-  public_subnet_ids = module.vpc.public_subnets
+  cluster_name                        = var.cluster_name
+  aws_region                          = var.aws_region
+  vpc_id                              = module.vpc.vpc_id
+  vpc_cidr                            = var.vpc_cidr
+  public_subnet_ids                   = module.vpc.public_subnets
+  prometheus_volume_availability_zone = local.azs[1]
 
   key_pair_name    = var.key_pair_name
   allowed_ssh_cidr = var.allowed_ssh_cidr

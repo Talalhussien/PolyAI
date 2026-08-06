@@ -23,6 +23,11 @@ variable "public_subnet_ids" {
   type        = list(string)
 }
 
+variable "prometheus_volume_availability_zone" {
+  description = "Availability zone for the existing Prometheus data volumes"
+  type        = string
+}
+
 variable "key_pair_name" {
   description = "Existing EC2 key pair name used for SSH access"
   type        = string

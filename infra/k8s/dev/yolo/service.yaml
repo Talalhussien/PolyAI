@@ -4,6 +4,8 @@ kind: Service
 metadata:
   name: yolo-svc
   namespace: dev
+  labels:
+    app: yolo
 spec:
   selector:
     app: yolo   # must exactly match the Deployment's Pod-template labels

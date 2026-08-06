@@ -87,7 +87,7 @@ variable "acm_certificate_arn" {
 variable "acm_certificate_domain" {
   description = "Domain or wildcard name used to discover the existing ACM certificate"
   type        = string
-  default     = "*.fursa.click"
+  default     = "*.talalhuss.fursa.click"
 }
 
 variable "ingress_http_node_port" {
@@ -116,12 +116,12 @@ variable "dns_records" {
   description = "Map of stable record keys to hostnames that alias the shared ALB"
   type        = map(string)
   default = {
-    dev_frontend  = "dev.fursa.click"
-    dev_agent     = "dev-agent.fursa.click"
-    prod_frontend = "app.fursa.click"
-    prod_agent    = "prod-agent.fursa.click"
-    grafana       = "grafana.fursa.click"
-    prometheus    = "prometheus.fursa.click"
-    argocd        = "argocd.fursa.click"
+    dev_frontend  = "dev.talalhuss.fursa.click"
+    dev_agent     = "dev-agent.talalhuss.fursa.click"
+    prod_frontend = "app.talalhuss.fursa.click"
+    prod_agent    = "prod-agent.talalhuss.fursa.click"
+    grafana       = "grafana.talalhuss.fursa.click"
+    prometheus    = "prometheus.talalhuss.fursa.click"
+    argocd        = "argocd.talalhuss.fursa.click"
   }
 }

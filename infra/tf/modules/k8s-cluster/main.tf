@@ -7,7 +7,7 @@ data "aws_ami" "ubuntu" {
   owners      = ["099720109477"] # Canonical
 
   filter {
-    name = "name"
+    name   = "name"
     values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-resolute-26.04-amd64-server-*"]
   }
   filter {
@@ -106,7 +106,7 @@ resource "aws_iam_role_policy" "cp_ssm_write" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow"
+      Effect   = "Allow"
       Action   = ["ssm:PutParameter", "ssm:AddTagsToResource", "ssm:DeleteParameter"]
       Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/${var.cluster_name}/*"
     }]
@@ -225,7 +225,41 @@ resource "aws_instance" "control_plane" {
     aws_region         = var.aws_region
   })
 
+  # Do not replace a running control plane merely because the latest Ubuntu
+  # AMI changed. A fresh cluster still uses the current AMI automatically.
+  lifecycle {
+    ignore_changes = [ami]
+  }
+
   tags = { Name = "${var.cluster_name}-control-plane" }
+}
+
+# These volumes already exist in Terraform state and are retained for the
+# Prometheus persistence setup. Keeping the declarations prevents a normal
+# cluster apply from deleting them while the Kubernetes PVC ownership is
+# reconciled separately.
+resource "aws_ebs_volume" "prometheus_dev" {
+  availability_zone = var.prometheus_volume_availability_zone
+  size              = 5
+  type              = "gp3"
+
+  tags = {
+    Name        = "prometheus-data-dev"
+    Environment = "dev"
+    Project     = "PolyAI"
+  }
+}
+
+resource "aws_ebs_volume" "prometheus_prod" {
+  availability_zone = var.prometheus_volume_availability_zone
+  size              = 5
+  type              = "gp3"
+
+  tags = {
+    Name        = "prometheus-data-prod"
+    Environment = "prod"
+    Project     = "PolyAI"
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -267,7 +301,7 @@ resource "aws_launch_template" "worker" {
 # Worker Auto Scaling Group
 # ---------------------------------------------------------------------------
 resource "aws_autoscaling_group" "worker" {
-  name = "${var.cluster_name}-worker-asg"
+  name                = "${var.cluster_name}-worker-asg"
   vpc_zone_identifier = [var.public_subnet_ids[1]]
   min_size            = var.worker_min_size
   max_size            = var.worker_max_size

@@ -17,7 +17,29 @@ permissions:
   contents: read
 
 jobs:
+  certificate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/tf/certificate
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::228281126655:role/talalhuss-github-terraform
+          aws-region: us-east-1
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform init certificate state
+        run: terraform init
+
+      - name: Terraform apply certificate
+        run: terraform apply -auto-approve
+
   provision:
+    needs: certificate
     runs-on: ubuntu-latest
     outputs:
       control_plane_ip: ${{ steps.tf_outputs.outputs.ip }}
