@@ -17,7 +17,29 @@ permissions:
   contents: read
 
 jobs:
+  bootstrap-iam:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/tf/bootstrap-iam
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::228281126655:role/talalhuss-github-terraform
+          aws-region: us-east-1
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform init IAM bootstrap state
+        run: terraform init
+
+      - name: Terraform apply GitHub Terraform permissions
+        run: terraform apply -auto-approve
+
   certificate:
+    needs: bootstrap-iam
     runs-on: ubuntu-latest
     defaults:
       run:
