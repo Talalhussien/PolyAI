@@ -1,12 +1,11 @@
 #!/bin/bash
 # Idempotent cluster bootstrap: Calico, EBS CSI driver, metrics-server,
-# ArgoCD, and the 12 ArgoCD Applications. Runs once per cluster lifetime via
+# ArgoCD, and the ArgoCD Applications. Runs once per cluster lifetime via
 # cluster.yaml's Bootstrap job (over SSH), but safe to re-run — every step below is
 # `kubectl apply`-based (not `create`), so re-running after a partial
 # failure or a manual re-trigger converges rather than erroring out.
 #
-# Expects DEV_VOL and PROD_VOL as environment variables (the fresh EBS
-# volume IDs from this run's `terraform output`), and expects
+# Expects GRAFANA_ADMIN_PASSWORD from the CI secret store, and expects
 # infra/k8s/ + infra/argocd/ to already be present in the working
 # directory (scp'd up by the calling workflow before this runs).
 set -euxo pipefail
@@ -39,18 +38,30 @@ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3
 echo "Waiting for ArgoCD pods..."
 kubectl -n argocd wait --for=condition=Available --timeout=300s deployment --all
 
-echo "Applying namespaces, storage class, network policies..."
+echo "Configuring ArgoCD for TLS termination at the ALB..."
+kubectl apply -f k8s/argocd/argocd-cmd-params-cm.yaml
+kubectl -n argocd rollout restart deployment/argocd-server
+kubectl -n argocd rollout status deployment/argocd-server --timeout=300s
+
+echo "Applying namespaces and storage class..."
 kubectl apply -f k8s/namespaces/
 kubectl apply -f k8s/storage/
 
+echo "Creating the monitoring namespace and Grafana Secret..."
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+: "${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be supplied by CI}"
+set +x
+kubectl create secret generic grafana-admin \
+  --namespace monitoring \
+  --from-literal=admin-user=admin \
+  --from-literal=admin-password="${GRAFANA_ADMIN_PASSWORD}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+set -x
 
-echo "Applying Prometheus PVs with this run's live volume IDs..."
-: "${DEV_VOL:?DEV_VOL must be set}"
-: "${PROD_VOL:?PROD_VOL must be set}"
-sed -E "s|^( *volumeHandle: ).*|\1${DEV_VOL}|"  k8s/dev/pv/prometheus-pv.yaml  | kubectl apply -f -
-sed -E "s|^( *volumeHandle: ).*|\1${PROD_VOL}|" k8s/prod/pv/prometheus-pv.yaml | kubectl apply -f -
+echo "Creating platform ArgoCD Applications..."
+kubectl apply -f argocd/platform-root.yaml
 
-echo "Creating ArgoCD Applications..."
+echo "Creating environment ArgoCD Applications..."
 kubectl apply -f argocd/dev/
 kubectl apply -f argocd/prod/
 

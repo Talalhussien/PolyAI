@@ -23,9 +23,9 @@ variable "public_subnet_ids" {
   type        = list(string)
 }
 
-variable "azs" {
-  description = "Availability Zones matching public_subnet_ids, in the same order — used to place the Prometheus EBS volumes in the same AZ the control plane (and observed worker) instances actually land in"
-  type        = list(string)
+variable "prometheus_volume_availability_zone" {
+  description = "Availability zone for the existing Prometheus data volumes"
+  type        = string
 }
 
 variable "key_pair_name" {
