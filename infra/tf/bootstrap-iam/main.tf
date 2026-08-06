@@ -75,6 +75,12 @@ resource "aws_iam_role_policy" "github_terraform_ingress" {
         Resource = local.certificate_arn
       },
       {
+        Sid      = "DiscoverIssuedCertificates"
+        Effect   = "Allow"
+        Action   = ["acm:ListCertificates"]
+        Resource = "*"
+      },
+      {
         Sid    = "IngressApplicationLoadBalancer"
         Effect = "Allow"
         Action = [

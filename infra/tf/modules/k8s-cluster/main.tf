@@ -234,6 +234,20 @@ resource "aws_instance" "control_plane" {
   tags = { Name = "${var.cluster_name}-control-plane" }
 }
 
+# Keep the control plane available for the bootstrap job. This also recovers
+# it automatically if it was stopped between workflow runs.
+resource "aws_ec2_instance_state" "control_plane" {
+  instance_id = aws_instance.control_plane.id
+  state       = "running"
+}
+
+data "aws_instance" "control_plane" {
+  instance_id = aws_instance.control_plane.id
+
+  # Read the address after the state resource has started the instance.
+  depends_on = [aws_ec2_instance_state.control_plane]
+}
+
 # These volumes already exist in Terraform state and are retained for the
 # Prometheus persistence setup. Keeping the declarations prevents a normal
 # cluster apply from deleting them while the Kubernetes PVC ownership is
