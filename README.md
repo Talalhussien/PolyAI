@@ -15,10 +15,11 @@ See each service's README for how to configure and run it.
 
 ## Cluster bootstrap prerequisites
 
-The cluster workflow expects the GitHub Actions secret
-`GRAFANA_ADMIN_PASSWORD` to be configured before bootstrapping a cluster. It
-creates the Kubernetes Secret used by the ArgoCD-managed kube-prometheus-stack
-without committing the password to this repository.
+The cluster workflow can optionally receive the GitHub Actions secret
+`GRAFANA_ADMIN_PASSWORD`. If it is not configured, bootstrap generates a
+random password on the control plane and creates the Kubernetes Secret used by
+the ArgoCD-managed kube-prometheus-stack without committing the password to
+this repository. Existing Grafana Secrets are preserved on reruns.
 
 The Terraform ingress module looks up an existing public `fursa.click` Route
 53 hosted zone and an issued ACM certificate. The persistent certificate stack
