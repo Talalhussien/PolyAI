@@ -5,9 +5,10 @@
 # `kubectl apply`-based (not `create`), so re-running after a partial
 # failure or a manual re-trigger converges rather than erroring out.
 #
-# Expects GRAFANA_ADMIN_PASSWORD from the CI secret store, and expects
-# infra/k8s/ + infra/argocd/ to already be present in the working
-# directory (scp'd up by the calling workflow before this runs).
+# GRAFANA_ADMIN_PASSWORD is optional. If it is not supplied, bootstrap
+# generates a random password once and stores it in Kubernetes. It expects
+# infra/k8s/ + infra/argocd/ to already be present in the working directory
+# (scp'd up by the calling workflow before this runs).
 set -euxo pipefail
 
 echo "Waiting for cloud-init to finish..."
@@ -49,14 +50,24 @@ kubectl apply -f k8s/storage/
 
 echo "Creating the monitoring namespace and Grafana Secret..."
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-: "${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be supplied by CI}"
-set +x
-kubectl create secret generic grafana-admin \
-  --namespace monitoring \
-  --from-literal=admin-user=admin \
-  --from-literal=admin-password="${GRAFANA_ADMIN_PASSWORD}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-set -x
+if [[ -z "${GRAFANA_ADMIN_PASSWORD:-}" ]]; then
+  if kubectl -n monitoring get secret grafana-admin >/dev/null 2>&1; then
+    echo "Grafana Secret already exists; preserving its password."
+  else
+    GRAFANA_ADMIN_PASSWORD="$(openssl rand -hex 32)"
+    echo "Generated a Grafana password and stored it in Kubernetes."
+  fi
+fi
+
+if [[ -n "${GRAFANA_ADMIN_PASSWORD:-}" ]]; then
+  set +x
+  kubectl create secret generic grafana-admin \
+    --namespace monitoring \
+    --from-literal=admin-user=admin \
+    --from-literal=admin-password="${GRAFANA_ADMIN_PASSWORD}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  set -x
+fi
 
 echo "Creating platform ArgoCD Applications..."
 kubectl apply -f argocd/platform-root.yaml
